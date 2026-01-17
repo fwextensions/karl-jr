@@ -1,5 +1,6 @@
 import { PostHog } from "posthog-js/dist/module.no-external";
 import { v7 as uuidv7 } from "uuid";
+import { getCurrentUser } from "@/api/wagtail-client";
 
 let posthog: PostHog | null = null;
 let isInitialized = false;
@@ -9,22 +10,35 @@ const recentEvents = new Map<string, number>();
 const DEBOUNCE_WINDOW = 100; // 100ms window to catch duplicates from React strict mode
 
 /**
- * Get or create a shared distinct ID across all extension contexts
+ * Get or create a device ID across all extension contexts
  * Uses chrome.storage.local since it's available in both service worker and side panel
  */
-async function getSharedDistinctId(): Promise<string> {
-	const result = await chrome.storage.local.get("posthogDistinctID");
-	const stored = result.posthogDistinctID as string | undefined;
-	
+async function getDeviceId(): Promise<string> {
+	const result = await chrome.storage.local.get("posthogDeviceID");
+	const stored = result.posthogDeviceID as string | undefined;
+
 	if (stored) {
 		return stored;
 	}
 
 	const id = uuidv7();
-	
-	await chrome.storage.local.set({ posthogDistinctID: id });
-	
+
+	await chrome.storage.local.set({ posthogDeviceID: id });
+
 	return id;
+}
+
+
+/**
+ * Hash a string using SHA-256 to create an anonymous identifier
+ */
+async function hashString(input: string): Promise<string> {
+	const encoder = new TextEncoder();
+	const data = encoder.encode(input);
+	const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+	const hashArray = Array.from(new Uint8Array(hashBuffer));
+	const hashHex = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+	return hashHex;
 }
 
 /**
@@ -49,21 +63,21 @@ export async function initAnalytics(): Promise<void> {
 	}
 
 	try {
-		const distinctId = await getSharedDistinctId();
-		console.log("[Analytics] Got distinct ID:", distinctId.substring(0, 8) + "...");
+		const deviceId = await getDeviceId();
+		console.log("[Analytics] Got device ID:", deviceId.substring(0, 8) + "...");
 
 		posthog = new PostHog();
 		posthog.init(apiKey, {
 			api_host: "https://us.i.posthog.com",
 			disable_external_dependency_loading: true,
 			persistence: "memory",
-			bootstrap: { distinctID: distinctId },
+			bootstrap: { distinctID: deviceId },
 			autocapture: false,
 			capture_pageview: false,
 			capture_pageleave: false,
 			loaded: () => {
 				console.log("[Analytics] ✓ PostHog successfully initialized!");
-				console.log("[Analytics] Distinct ID:", distinctId.substring(0, 8) + "...");
+				console.log("[Analytics] Device ID:", deviceId.substring(0, 8) + "...");
 			}
 		});
 
@@ -73,12 +87,56 @@ export async function initAnalytics(): Promise<void> {
 		// track extension metadata as super properties
 		posthog.register({
 			extension_version: chrome.runtime.getManifest().version,
-			environment: import.meta.env.DEV ? "development" : "production"
+			environment: import.meta.env.DEV ? "development" : "production",
+			device_id: deviceId
 		});
 
 		console.log("[Analytics] Super properties registered");
+
+		// identify user if they have a Wagtail session
+		await identifyUser();
 	} catch (error) {
 		console.error("[Analytics] Failed to initialize PostHog:", error);
+	}
+}
+
+/**
+ * Identify the current user based on their Wagtail user ID
+ * Creates a person profile for DAU tracking while maintaining anonymity
+ * Safe to call multiple times - PostHog will merge if user already exists
+ *
+ * This should be called:
+ * - During initial analytics setup (if user is logged in)
+ * - After user logs in to Wagtail
+ * - When using authenticated features (link checker, etc)
+ */
+export async function identifyUser(): Promise<void> {
+	if (!posthog || !isInitialized) {
+		console.log("[Analytics] Cannot identify user: PostHog not initialized");
+		return;
+	}
+
+	try {
+		const user = await getCurrentUser();
+
+		if (!user) {
+			console.log("[Analytics] No Wagtail user found, skipping user identification");
+			return;
+		}
+
+		// hash the user ID to create a stable anonymous user identifier
+		// this gives us stable user tracking across sessions and devices
+		const hashedUserId = await hashString(user.id.toString());
+		console.log("[Analytics] Identifying user with hashed ID:", hashedUserId.substring(0, 8) + "...");
+
+		posthog.identify(hashedUserId, {
+			// no PII - just metadata about the extension usage
+			user_type: "wagtail_editor"
+		});
+
+		console.log("[Analytics] ✓ User identified successfully");
+	} catch (error) {
+		console.error("[Analytics] Failed to identify user:", error);
 	}
 }
 
