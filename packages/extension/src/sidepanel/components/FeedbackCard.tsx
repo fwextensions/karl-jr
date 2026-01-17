@@ -3,6 +3,7 @@ import type { FeedbackRecord, FeedbackStats, AirtableApiError } from "@sf-gov/sh
 import { getFeedback, clearCache } from "@/api/airtable-client";
 import { Button } from "@/sidepanel/components/Button.tsx";
 import { Card } from "@/sidepanel/components/Card.tsx";
+import { trackEvent } from "@/lib/analytics";
 
 interface FeedbackCardProps {
 	pagePath: string;
@@ -115,6 +116,13 @@ export const FeedbackCard: React.FC<FeedbackCardProps> = ({ pagePath }) => {
 
 	const handleExpandedChange = (expanded: boolean) => {
 		setIsExpanded(expanded);
+
+		// track feedback card expansion
+		if (expanded) {
+			trackEvent("feedback_card_expanded", {
+				page_path: pagePath
+			});
+		}
 	};
 
 	const loadFeedback = async () => {
@@ -126,6 +134,13 @@ export const FeedbackCard: React.FC<FeedbackCardProps> = ({ pagePath }) => {
 			const { records, stats: statistics } = await getFeedback(pagePath);
 			setFeedback(records);
 			setStats(statistics);
+
+			// track successful feedback view
+			trackEvent("feedback_viewed", {
+				page_path: pagePath,
+				total_feedback: statistics.total,
+				helpful_percent: statistics.helpfulPercent
+			});
 		} catch (err) {
 			setError(err as AirtableApiError);
 		} finally {

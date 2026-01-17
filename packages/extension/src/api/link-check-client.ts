@@ -28,7 +28,7 @@ export interface LinkCheckClientOptions {
 	urls: string[];
 	pageUrl: string;
 	onResult: (result: LinkCheckResultEvent) => void;
-	onComplete: (summary: LinkCheckCompleteEvent) => void;
+	onComplete: (summary: LinkCheckCompleteEvent, results: LinkCheckResultEvent[]) => void;
 	onError: (error: string) => void;
 }
 
@@ -127,18 +127,19 @@ export class LinkCheckClient {
 	 * Sets up a stream reader for SSE events from the response body
 	 * @param body - ReadableStream from the fetch response
 	 * @param onResult - Callback for result events
-	 * @param onComplete - Callback for completion event
+	 * @param onComplete - Callback for completion event (includes accumulated results)
 	 * @param onError - Callback for error events
 	 */
 	private setupStreamReader(
 		body: ReadableStream<Uint8Array>,
 		onResult: (result: LinkCheckResultEvent) => void,
-		onComplete: (summary: LinkCheckCompleteEvent) => void,
+		onComplete: (summary: LinkCheckCompleteEvent, results: LinkCheckResultEvent[]) => void,
 		onError: (error: string) => void
 	): void {
 		const reader = body.getReader();
 		const decoder = new TextDecoder();
 		let buffer = "";
+		const accumulatedResults: LinkCheckResultEvent[] = [];
 
 		const processStream = async () => {
 			try {
@@ -168,11 +169,13 @@ export class LinkCheckClient {
 
 							// handle different event types
 							if (data.type === "complete") {
-								onComplete(data as LinkCheckCompleteEvent);
+								onComplete(data as LinkCheckCompleteEvent, accumulatedResults);
 							} else if (data.type === "error") {
 								onError((data as LinkCheckErrorEvent).message);
 							} else if (data.url && data.status) {
-								onResult(data as LinkCheckResultEvent);
+								const result = data as LinkCheckResultEvent;
+								accumulatedResults.push(result);
+								onResult(result);
 							}
 						} catch (parseError) {
 							console.error("Failed to parse SSE message:", parseError);

@@ -9,6 +9,7 @@ import {
 	setCachedResults,
 	clearLinkCheckerCache,
 } from "../lib/link-checker-cache";
+import { trackEvent, trackError } from "@/lib/analytics";
 
 const SpinnerIcon = () => (
 	<svg
@@ -196,6 +197,8 @@ export function LinkCheckerCard({ pageUrl }: LinkCheckerCardProps)
 		setHasRun(false);
 		setProgress({ checked: 0, total: 0 });
 
+		const startTime = Date.now();
+
 		try {
 			const [tab] = await chrome.tabs.query({
 				active: true,
@@ -219,6 +222,12 @@ export function LinkCheckerCard({ pageUrl }: LinkCheckerCardProps)
 				return;
 			}
 
+			// track link check start
+			trackEvent("link_check_started", {
+				page_url: pageUrl,
+				link_count: links.length
+			});
+
 			// create a map of URL to link text for later reference
 			const linkTextMap = new Map<string, string>();
 			links.forEach(link => {
@@ -238,29 +247,61 @@ export function LinkCheckerCard({ pageUrl }: LinkCheckerCardProps)
 						...result,
 						text: linkTextMap.get(result.url) || "",
 					};
-					
+
 					// update results incrementally
 					setResults(prev => [...prev, linkResult]);
 					setProgress(prev => ({ ...prev, checked: prev.checked + 1 }));
 				},
-				onComplete: () => {
+				onComplete: (_summary, serverResults) => {
+					console.log("[LinkChecker] onComplete callback fired, results:", serverResults.length);
+
+					// add link text to results and update state
+					const finalResults: LinkCheckResult[] = serverResults.map(result => ({
+						...result,
+						text: linkTextMap.get(result.url) || "",
+					}));
+
+					setResults(finalResults);
+					setCachedResults(pageUrl, finalResults);
 					setHasRun(true);
 					setIsLoading(false);
-					// cache results after completion
-					setResults(currentResults => {
-						setCachedResults(pageUrl, currentResults);
-						return currentResults;
+
+					// track completion
+					const duration = Date.now() - startTime;
+					const brokenLinks = finalResults.filter(r =>
+						r.status === "broken" || r.status === "timeout" || r.status === "error"
+					).length;
+					const insecureLinks = finalResults.filter(r => r.status === "insecure").length;
+
+					trackEvent("link_check_completed", {
+						page_url: pageUrl,
+						total_links: finalResults.length,
+						broken_links: brokenLinks,
+						insecure_links: insecureLinks,
+						duration_ms: duration
 					});
 				},
 				onError: (errorMessage) => {
 					setError(errorMessage);
 					setIsLoading(false);
+
+					// track link check error
+					trackError("link_check_error", new Error(errorMessage), {
+						page_url: pageUrl,
+						link_count: links.length
+					});
 				},
 			});
 		} catch (err) {
 			console.error("Link check failed:", err);
-			setError(err instanceof Error ? err.message : "Unknown error occurred");
+			const errorMessage = err instanceof Error ? err.message : "Unknown error occurred";
+			setError(errorMessage);
 			setIsLoading(false);
+
+			// track link check error
+			trackError("link_check_error", err as Error, {
+				page_url: pageUrl
+			});
 		}
 	};
 

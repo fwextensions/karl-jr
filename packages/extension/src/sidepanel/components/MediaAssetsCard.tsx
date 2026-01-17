@@ -4,6 +4,7 @@ import type { MediaAsset } from "@sf-gov/shared";
 import { EditIcon } from "@/sidepanel/components/EditIcon.tsx";
 import { OpenIcon } from "@/sidepanel/components/OpenIcon.tsx";
 import { extractPdfLinks, type LinkInfo } from "@/lib/link-check";
+import { trackEvent } from "@/lib/analytics";
 
 interface MediaAssetsCardProps {
 	images: MediaAsset[];
@@ -47,6 +48,12 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 	}, [files]);
 
 	const handleImageClick = async (imageId: number) => {
+		// track image click
+		trackEvent("media_asset_clicked", {
+			type: "image",
+			asset_id: imageId
+		});
+
 		const adminUrl = `https://api.sf.gov/admin/images/${imageId}/`;
 		const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
 		if (tabs[0]?.id) {
@@ -59,6 +66,14 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 				args: [adminUrl],
 			});
 		}
+	};
+
+	const handleFileClick = (fileId: number) => {
+		// track file/document click
+		trackEvent("media_asset_clicked", {
+			type: "document",
+			asset_id: fileId
+		});
 	};
 
 	if (!hasImages && !hasFiles && pdfLinks.length === 0 && !isLoadingPdfs) {
@@ -117,6 +132,7 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 										href={file.url}
 										target="_blank"
 										rel="noopener noreferrer"
+										onClick={() => handleFileClick(file.id)}
 										className="text-sm inline-flex items-center gap-2"
 									>
                     <span className="flex flex-col items-start">

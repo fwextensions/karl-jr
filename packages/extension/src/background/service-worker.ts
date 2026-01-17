@@ -7,8 +7,9 @@
 import "@/lib/console.ts";
 import { extractPageSlug } from "@/lib/urlUtils.ts";
 import { findPageBySlug } from "@/api/wagtail-client.ts";
+import { initAnalytics, trackEvent, trackError } from "@/lib/analytics.ts";
 
-	// Add hostnames to exclude here, e.g.:
+// Add hostnames to exclude here, e.g.:
 const EXCLUDED_HOSTNAMES: string[] = [
 	"api.sf.gov"
 ];
@@ -83,10 +84,23 @@ async function updateContextMenuVisibility(url: string): Promise<void> {
 /**
  * Set up event listeners when the service worker is installed
  */
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(async ({ reason, previousVersion }) => {
+	// initialize analytics
+	await initAnalytics();
+
+	// track install or update
+	if (reason === "install") {
+		trackEvent("extension_installed");
+	} else if (reason === "update") {
+		trackEvent("extension_updated", {
+			previous_version: previousVersion,
+			new_version: chrome.runtime.getManifest().version
+		});
+	}
+
 	// disable side panel by default for all tabs
 	void chrome.sidePanel.setOptions({ enabled: false });
-	
+
 	void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 	console.log("SF.gov Companion installed");
 
@@ -121,7 +135,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "edit-on-karl") {
     if (tab?.url && isSfGovDomain(tab.url)) {
 			const { url } = tab;
-			
+
 			// Double-check exclusion list
 			try {
 				const urlObj = new URL(url);
@@ -129,6 +143,11 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 			} catch (e) { /* ignore */ }
 
       console.log("==== edit", url);
+
+			// track context menu usage
+			trackEvent("context_menu_clicked", {
+				page_url: url
+			});
 
 			try {
 				const slug = extractPageSlug(url);
@@ -141,6 +160,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 				}
 			} catch (e) {
 				console.error(e);
+				trackError("context_menu_page_lookup_failed", e as Error, {
+					page_url: url
+				});
 			}
     }
   }

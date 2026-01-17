@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useSfGovPage } from "./hooks/useSfGovPage";
 import { LoadingState } from "./components/LoadingState";
 import { ErrorState } from "./components/ErrorState";
@@ -9,6 +10,7 @@ import { FormConfirmationCard } from "./components/FormConfirmationCard";
 import { PreviewBanner } from "./components/PreviewBanner";
 import { FeedbackCard } from "./components/FeedbackCard";
 import { LinkCheckerCard } from "./components/LinkCheckerCard";
+import { initAnalytics, trackEvent, trackError } from "@/lib/analytics";
 //import { TranslationsCard } from "./components/TranslationsCard";
 //import { A11yCheckCard } from "./components/A11yCheckCard";
 
@@ -33,6 +35,42 @@ export default function App()
 		pagePath,
 		retry
 	} = useSfGovPage();
+
+	// initialize analytics
+	useEffect(() => {
+		initAnalytics();
+	}, []);
+
+	// track side panel views - only once per URL when we have final data
+	useEffect(() => {
+		// wait until loading is complete and we have a definitive state
+		// (either pageData is available, or we're on a non-SF.gov page, or we're on admin)
+		if (isLoading || !currentUrl) return;
+
+		// only track for SF.gov pages
+		if (!isOnSfGov) return;
+
+		// for admin pages, track immediately (no pageData needed for iframe view)
+		// for public pages, wait until pageData is loaded
+		if (!isAdminPage && !pageData) return;
+
+		trackEvent("sidepanel_viewed", {
+			is_admin_page: isAdminPage,
+			content_type: pageData?.contentType,
+			has_data: !!pageData,
+			page_url: currentUrl
+		});
+	}, [isOnSfGov, isLoading, isAdminPage, pageData, currentUrl]);
+
+	// track errors
+	useEffect(() => {
+		if (error) {
+			trackError("sidepanel_load_error", new Error(error.message), {
+				error_type: error.type,
+				page_url: currentUrl
+			});
+		}
+	}, [error, currentUrl]);
 
 	if (isLoading) {
 		return (
