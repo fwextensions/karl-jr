@@ -68,12 +68,25 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 		}
 	};
 
-	const handleFileClick = (fileId: number) => {
+	const handleFileClick = async (fileId: number) => {
 		// track file/document click
 		trackEvent("media_asset_clicked", {
 			type: "document",
 			asset_id: fileId
 		});
+
+		const adminUrl = `https://api.sf.gov/admin/documents/edit/${fileId}/`;
+		const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+		if (tabs[0]?.id) {
+			// navigate from within the page context to preserve history properly
+			await chrome.scripting.executeScript({
+				target: { tabId: tabs[0].id },
+				func: (url: string) => {
+					window.location.href = url;
+				},
+				args: [adminUrl],
+			});
+		}
 	};
 
 	if (!hasImages && !hasFiles && pdfLinks.length === 0 && !isLoadingPdfs) {
@@ -86,7 +99,7 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 	}
 
 	return (
-		<Card title="Images and Files">
+		<Card title="Images and Documents">
 			<div className="space-y-4">
 				{/* Images Section */}
 				<div>
@@ -101,7 +114,7 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 										className="text-sm text-left min-w-0 shrink inline-flex flex-row items-center gap-2 cursor-pointer bg-transparent border-none p-0"
 										title="Edit image on Karl"
 									>
-										<EditIcon className="h-4 w-4" aria-hidden="true" />
+										<EditIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
 										{image.title || image.filename || "Untitled Image"}
 									</a>
 									<a
@@ -123,31 +136,39 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 
 				{/* Files Section */}
 				<div>
-					<h3 className="text-sm font-semibold text-gray-700 mb-2">Files</h3>
+					<h3 className="text-sm font-semibold text-gray-700 mb-2">Documents</h3>
 					{hasFiles ? (
-						<ul className="space-y-2">
+						<ul className="w-full space-y-2">
 							{files.map((file) => (
-								<li key={file.id}>
+								<li key={file.id} className="flex items-center gap-2">
+									<a
+										href="#"
+										onClick={() => handleFileClick(file.id)}
+										className="text-sm text-left min-w-0 shrink inline-flex flex-row items-center gap-2 cursor-pointer bg-transparent border-none p-0"
+										title="Edit document on Karl"
+									>
+										<EditIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+										<span className="flex flex-col items-start">
+											<span>{file.title || file.filename || "Untitled File"}</span>
+											{file.filename && file.title
+												&& file.title !== file.filename
+												&& (<span className="text-xs text-gray-500">{file.filename}</span>)}
+										</span>
+									</a>
 									<a
 										href={file.url}
 										target="_blank"
 										rel="noopener noreferrer"
-										onClick={() => handleFileClick(file.id)}
-										className="text-sm inline-flex items-center gap-2"
+										className="ml-1 inline-block bg-sfgov-blue rounded-sm text-white opacity-70 hover:opacity-100 shrink-0 mt-0.5"
+										title="Open original file in new tab"
 									>
-                    <span className="flex flex-col items-start">
-                      <span>{file.title || file.filename || "Untitled File"}</span>
-											{file.filename && file.title
-                        && file.title !== file.filename
-                        && (<span className="text-xs text-gray-500">{file.filename}</span>)}
-                    </span>
-										<OpenIcon className="w-4 h-4 shrink-0" aria-hidden="true" />
+										<OpenIcon className="w-4 h-4" aria-hidden="true" />
 									</a>
 								</li>
 							))}
 						</ul>
 					) : (
-						<p className="text-sm text-gray-500 italic">No files</p>
+						<p className="text-sm text-gray-500 italic">No documents</p>
 					)}
 				</div>
 

@@ -440,7 +440,6 @@ function extractTranslationsFromItems(allItems: any[], currentUrl?: string): Tra
     'zh': '中文',
     'fil': 'Filipino',
     'vi': 'Tiếng Việt',
-    'ru': 'Русский'
   };
 
   const adminBaseUrl = getAdminBaseUrl(currentUrl);

@@ -106,15 +106,17 @@ chrome.runtime.onInstalled.addListener(async ({ reason, previousVersion }) => {
 
   // Create a menu item that appears when right-clicking anywhere on the page
   // BUT only on URLs matching the specified pattern
-  chrome.contextMenus.create({
-    id: "edit-on-karl",
-    title: "Edit on Karl",
-    contexts: ["page", "action"], // "page" for right-click on the page, "action" for the icon
-    documentUrlPatterns: [
-      "https://*.sf.gov/*",
-      "http://*.sf.gov/*"
-    ]
-  });
+	chrome.contextMenus.removeAll(() => {
+		chrome.contextMenus.create({
+			id: "edit-on-karl",
+			title: "Edit on Karl",
+			contexts: ["page", "action"], // "page" for right-click on the page, "action" for the icon
+			documentUrlPatterns: [
+				"https://*.sf.gov/*",
+				"http://*.sf.gov/*"
+			]
+		});
+	});
 
 	// check all existing tabs and enable side panel for sf.gov domains
 	try {
