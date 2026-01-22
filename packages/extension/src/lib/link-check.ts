@@ -211,3 +211,102 @@ export function extractPdfLinks(): LinkInfo[]
 
 	return results;
 }
+
+export interface CategorizedLinks {
+	pdfs: LinkInfo[];
+	otherFiles: LinkInfo[];
+	external: LinkInfo[];
+	internal: LinkInfo[];
+}
+
+/**
+ * Extracts and categorizes all links from the <main> content area of the page.
+ * This function is designed to be injected into the page context.
+ */
+export function extractCategorizedLinks(): CategorizedLinks
+{
+	const results: CategorizedLinks = {
+		pdfs: [],
+		otherFiles: [],
+		external: [],
+		internal: [],
+	};
+	const main = document.querySelector("main");
+
+	if (!main) {
+		return results;
+	}
+
+	const links = main.querySelectorAll("a[href]");
+	const seen = new Set<string>();
+	const currentHostname = window.location.hostname;
+	const fileExtensions = [".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".zip", ".csv", ".txt", ".rtf"];
+
+	// helper to get base domain (e.g., "sf.gov" from "www.sf.gov" or "api.sf.gov")
+	const getBaseDomain = (hostname: string): string => {
+		const parts = hostname.split(".");
+		// if hostname has at least 2 parts, return last 2 (e.g., "sf.gov")
+		if (parts.length >= 2) {
+			return parts.slice(-2).join(".");
+		}
+		return hostname;
+	};
+
+	const currentBaseDomain = getBaseDomain(currentHostname);
+
+	links.forEach((link) => {
+		const anchor = link as HTMLAnchorElement;
+		const href = anchor.href;
+
+		// skip empty, javascript:, mailto:, tel: links
+		if (!href ||
+			href.startsWith("javascript:") ||
+			href.startsWith("mailto:") ||
+			href.startsWith("tel:") ||
+			href.startsWith("#")
+		) {
+			return;
+		}
+
+		// deduplicate
+		if (seen.has(href)) {
+			return;
+		}
+		seen.add(href);
+
+		const linkInfo: LinkInfo = {
+			url: href,
+			text: anchor.textContent?.trim() || "",
+		};
+
+		const lowerHref = href.toLowerCase();
+
+		// categorize PDFs
+		if (lowerHref.endsWith(".pdf")) {
+			results.pdfs.push(linkInfo);
+			return;
+		}
+
+		// categorize other file types
+		if (fileExtensions.some(ext => lowerHref.endsWith(ext))) {
+			results.otherFiles.push(linkInfo);
+			return;
+		}
+
+		// categorize external vs internal
+		try {
+			const linkUrl = new URL(href);
+			const linkBaseDomain = getBaseDomain(linkUrl.hostname);
+			if (linkBaseDomain === currentBaseDomain) {
+				results.internal.push(linkInfo);
+			} else {
+				results.external.push(linkInfo);
+			}
+		} catch {
+			// if URL parsing fails, treat as internal
+			results.internal.push(linkInfo);
+		}
+	});
+
+	return results;
+}

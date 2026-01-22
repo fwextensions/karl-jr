@@ -1,9 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Card } from "./Card";
 import type { MediaAsset } from "@sf-gov/shared";
 import { EditIcon } from "@/sidepanel/components/EditIcon.tsx";
 import { OpenIcon } from "@/sidepanel/components/OpenIcon.tsx";
-import { extractPdfLinks, type LinkInfo } from "@/lib/link-check";
 import { trackEvent } from "@/lib/analytics";
 
 interface MediaAssetsCardProps {
@@ -17,35 +16,6 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 }) => {
 	const hasImages = images.length > 0;
 	const hasFiles = files.length > 0;
-	const [pdfLinks, setPdfLinks] = useState<LinkInfo[]>([]);
-	const [isLoadingPdfs, setIsLoadingPdfs] = useState(true);
-
-	useEffect(() => {
-		const fetchPdfLinks = async () => {
-			try {
-				const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-				if (tabs[0]?.id) {
-					const results = await chrome.scripting.executeScript({
-						target: { tabId: tabs[0].id },
-						func: extractPdfLinks,
-					});
-					if (results[0]?.result) {
-						const allPdfLinks = results[0].result;
-						const fileUrls = new Set(files.map(f => f.url));
-						const dedupedPdfLinks = allPdfLinks.filter(pdf => !fileUrls.has(pdf.url));
-						
-						setPdfLinks(dedupedPdfLinks);
-					}
-				}
-			} catch (error) {
-				console.error("Failed to extract PDF links:", error);
-			} finally {
-				setIsLoadingPdfs(false);
-			}
-		};
-
-		fetchPdfLinks();
-	}, [files]);
 
 	const handleImageClick = async (imageId: number) => {
 		// track image click
@@ -89,17 +59,16 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 		}
 	};
 
-	if (!hasImages && !hasFiles && pdfLinks.length === 0 && !isLoadingPdfs) {
+	if (!hasImages && !hasFiles) {
 		return (
-			<Card title="Images and Files">
-				<p className="text-sm text-gray-500 italic">No media assets
-					available</p>
+			<Card title="Images and Documents" collapsible>
+				<p className="text-sm text-gray-500 italic">No media assets available</p>
 			</Card>
 		);
 	}
 
 	return (
-		<Card title="Images and Documents">
+		<Card title="Images and Documents" collapsible>
 			<div className="space-y-4">
 				{/* Images Section */}
 				<div>
@@ -169,34 +138,6 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 						</ul>
 					) : (
 						<p className="text-sm text-gray-500 italic">No documents</p>
-					)}
-				</div>
-
-				{/* PDF Links Section */}
-				<div>
-					<h3 className="text-sm font-semibold text-gray-700 mb-2">PDF Links</h3>
-					{isLoadingPdfs ? (
-						<p className="text-sm text-gray-500 italic">Loading...</p>
-					) : pdfLinks.length > 0 ? (
-						<ul className="space-y-2">
-							{pdfLinks.map((pdf, index) => (
-								<li key={index}>
-									<a
-										href={pdf.url}
-										target="_blank"
-										rel="noopener noreferrer"
-										className="text-sm inline-flex items-center gap-2"
-									>
-										<span className="flex flex-col items-start">
-											<span>{pdf.text || "Untitled PDF"}</span>
-											<span className="text-xs text-gray-500 break-all">{decodeURIComponent(new URL(pdf.url).pathname.split("/").pop() || "")}</span>
-										</span>
-									</a>
-								</li>
-							))}
-						</ul>
-					) : (
-						<p className="text-sm text-gray-500 italic">No PDF links found</p>
 					)}
 				</div>
 			</div>

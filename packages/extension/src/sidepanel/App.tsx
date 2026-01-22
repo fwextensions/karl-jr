@@ -9,10 +9,11 @@ import { MediaAssetsCard } from "./components/MediaAssetsCard";
 import { FormConfirmationCard } from "./components/FormConfirmationCard";
 import { PreviewBanner } from "./components/PreviewBanner";
 import { FeedbackCard } from "./components/FeedbackCard";
-import { LinkCheckerCard } from "./components/LinkCheckerCard";
-import { initAnalytics, trackEvent, trackError, identifyUser } from "@/lib/analytics";
+import { LinksCard } from "./components/LinksCard";
+//import { LinkCheckerCard } from "./components/LinkCheckerCard";
 //import { TranslationsCard } from "./components/TranslationsCard";
 //import { A11yCheckCard } from "./components/A11yCheckCard";
+import { initAnalytics, trackEvent, trackError, identifyUser } from "@/lib/analytics";
 
 const Container = ({ children }: { children: React.ReactNode }) => (
 	<div className="min-h-screen p-4 bg-gray-50">
@@ -184,8 +185,9 @@ export default function App()
 					<FormConfirmationCard formConfirmation={pageData.formConfirmation} currentUrl={currentUrl} />
 				)}
 				<MediaAssetsCard images={pageData.images} files={pageData.files} />
-				<LinkCheckerCard pageUrl={currentUrl} />
+				<LinksCard files={pageData.files} pageUrl={currentUrl} />
 {/*
+				<LinkCheckerCard pageUrl={currentUrl} />
 				<A11yCheckCard />
 */}
 				<MetadataCard
