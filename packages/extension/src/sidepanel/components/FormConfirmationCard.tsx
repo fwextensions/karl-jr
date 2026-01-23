@@ -27,7 +27,7 @@ export const FormConfirmationCard: React.FC<FormConfirmationCardProps> = ({
 	};
 
 	return (
-		<Card title="Form Confirmation">
+		<Card title="Form Confirmation" subtitle="Text shown on the confirmation page">
 			<div className="space-y-3">
 				{formConfirmation.title && (
 					<div className="mt-2 font-semibold text-gray-700 text-[1.25em]">

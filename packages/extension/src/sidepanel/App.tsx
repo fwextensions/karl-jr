@@ -3,16 +3,12 @@ import { useSfGovPage } from "./hooks/useSfGovPage";
 import { LoadingState } from "./components/LoadingState";
 import { ErrorState } from "./components/ErrorState";
 import { PageHeader } from "./components/PageHeader";
-import { EditLinkCard } from "./components/EditLinkCard";
 import { MetadataCard } from "./components/MetadataCard";
 import { MediaAssetsCard } from "./components/MediaAssetsCard";
 import { FormConfirmationCard } from "./components/FormConfirmationCard";
 import { PreviewBanner } from "./components/PreviewBanner";
 import { FeedbackCard } from "./components/FeedbackCard";
 import { LinksCard } from "./components/LinksCard";
-//import { LinkCheckerCard } from "./components/LinkCheckerCard";
-//import { TranslationsCard } from "./components/TranslationsCard";
-//import { A11yCheckCard } from "./components/A11yCheckCard";
 import { initAnalytics, trackEvent, trackError, identifyUser } from "@/lib/analytics";
 
 const Container = ({ children }: { children: React.ReactNode }) => (
@@ -150,6 +146,7 @@ export default function App()
 				{isPreviewMode && previewTimestamp > 0 && (
 					<PreviewBanner timestamp={previewTimestamp} />
 				)}
+
 				{isAdminPage && !isPreviewMode && (
 					<div className="bg-gray-50 border border-gray-200 rounded-lg shadow-sm p-4 mb-4">
 						<div className="flex items-center gap-2">
@@ -178,27 +175,18 @@ export default function App()
 						</div>
 					</div>
 				)}
-				<PageHeader title={pageData.title} />
-				<EditLinkCard pageId={pageData.id} />
-				<FeedbackCard pagePath={pagePath} />
+
+				<PageHeader pageData={pageData} />
+				<MediaAssetsCard images={pageData.images} files={pageData.files} />
+				<LinksCard files={pageData.files} pageUrl={currentUrl} />
 				{pageData.formConfirmation && (
 					<FormConfirmationCard formConfirmation={pageData.formConfirmation} currentUrl={currentUrl} />
 				)}
-				<MediaAssetsCard images={pageData.images} files={pageData.files} />
-				<LinksCard files={pageData.files} pageUrl={currentUrl} />
-{/*
-				<LinkCheckerCard pageUrl={currentUrl} />
-				<A11yCheckCard />
-*/}
+				<FeedbackCard pagePath={pagePath} />
 				<MetadataCard
-					primaryAgency={pageData.primaryAgency}
-					contentType={pageData.contentType}
 					pageId={pageData.id}
-					schema={pageData.schema}
+					translations={pageData.translations}
 				/>
-{/*
-				<TranslationsCard translations={pageData.translations} />
-*/}
 			</div>
 		</Container>
 	);

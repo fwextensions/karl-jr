@@ -36,34 +36,51 @@ function LinksList({
 	defaultText
 }: LinksListProps)
 {
+	const [isExpanded, setIsExpanded] = useState(false);
+
 	return (
-		<div>
-			<h3 className="text-sm font-semibold text-gray-700 mb-2">
-				{title} ({links.length})
-			</h3>
-			<ul className="space-y-2">
-				{links.map((
-					link,
-					index) => (
-					<li key={index}>
-						<a
-							href={link.url}
-							title={link.url}
-							target="_blank"
-							rel="noopener noreferrer"
-							className="text-sm inline-flex items-center gap-2"
-						>
-							<span className="flex flex-col items-start">
-								<span>{link.text || defaultText}</span>
-								<span className="text-xs text-gray-500 break-all">
-									{extractDisplayURL(link.url, linkType)}
+		<div className="relative">
+			<button
+				onClick={() => setIsExpanded(!isExpanded)}
+				className="relative box-content w-full flex items-center justify-between text-sm font-semibold text-gray-700 px-[6px] py-1 left-[-6px] rounded-sm hover:text-gray-900 hover:bg-gray-100 cursor-pointer transition-colors"
+			>
+				<span>
+					{title} ({links.length})
+				</span>
+				<svg
+					className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+					fill="none"
+					stroke="currentColor"
+					viewBox="0 0 24 24"
+				>
+					<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+				</svg>
+			</button>
+			{isExpanded && (
+				<ul className="space-y-2">
+					{links.map((
+						link,
+						index) => (
+						<li key={index}>
+							<a
+								href={link.url}
+								title={link.url}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="text-sm inline-flex items-center gap-2"
+							>
+								<span className="flex flex-col items-start">
+									<span>{link.text || defaultText}</span>
+									<span className="text-xs text-gray-500 break-all">
+										{extractDisplayURL(link.url, linkType)}
+									</span>
 								</span>
-							</span>
-							<OpenIcon className="w-4 h-4 shrink-0" aria-hidden="true" />
-						</a>
-					</li>
-				))}
-			</ul>
+								<OpenIcon className="w-4 h-4 shrink-0" aria-hidden="true" />
+							</a>
+						</li>
+					))}
+				</ul>
+			)}
 		</div>
 	);
 }
@@ -140,7 +157,7 @@ export const LinksCard: React.FC<LinksCardProps> = ({ files, pageUrl }) => {
 
 	return (
 		<Card title="Links" collapsible>
-			<div className="space-y-4">
+			<div className="space-y-2">
 				{pdfs.length > 0 &&
 					<LinksList
 						title="PDFs"
@@ -177,7 +194,7 @@ export const LinksCard: React.FC<LinksCardProps> = ({ files, pageUrl }) => {
 					/>
 				}
 			</div>
-			<div className="mt-4">
+			<div className="mt-3">
 				<LinkChecker pageUrl={pageUrl} />
 			</div>
 		</Card>

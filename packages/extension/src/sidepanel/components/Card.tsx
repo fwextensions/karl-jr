@@ -1,5 +1,9 @@
 import React, { useState } from "react";
 
+const getStorageKey = (title: string) => `card_${title.replace(/\s+/g, "_")}_expanded`;
+
+const clickableHeaderStyle ="relative box-content w-full flex items-center justify-between text-sm font-semibold text-gray-900 -my-1 px-[6px] py-1 left-[-6px] rounded-sm hover:text-gray-900 hover:bg-gray-100 cursor-pointer transition-colors";
+
 interface CardProps {
 	title?: string;
 	subtitle?: string;
@@ -9,14 +13,12 @@ interface CardProps {
 	onExpandedChange?: (expanded: boolean) => void;
 }
 
-const getStorageKey = (title: string) => `card_${title.replace(/\s+/g, "_")}_expanded`;
-
 export const Card: React.FC<CardProps> = ({
 	title,
 	subtitle,
 	children,
 	className = "",
-	collapsible = false,
+	collapsible = true,
 	onExpandedChange,
 }) => {
 	const [isExpanded, setIsExpanded] = useState<boolean>(() => {
@@ -35,12 +37,12 @@ export const Card: React.FC<CardProps> = ({
 	const showContent = !collapsible || isExpanded;
 
 	return (
-		<div className={`bg-white border border-gray-200 rounded-lg shadow-sm p-4 pt-3 ${className}`}>
+		<div className={`bg-white border border-gray-200 rounded-lg shadow-sm p-4 ${className} ${collapsible && isExpanded ? "mb-4" : ""}`}>
 			{title && (
 				<button
 					onClick={toggleExpanded}
 					disabled={!collapsible}
-					className={`flex items-center justify-between w-full text-left ${collapsible ? "cursor-pointer" : ""}`}
+					className={`flex items-center justify-between w-full text-left ${collapsible ? clickableHeaderStyle : ""}`}
 				>
 					<div>
 						<h2 className="text-lg font-semibold text-gray-900">{title}</h2>
