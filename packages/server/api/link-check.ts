@@ -553,15 +553,6 @@ async function checkLink(url: string, pageUrl: string): Promise<LinkCheckResultE
 				} else if (statusCode === 405 && method === "HEAD") {
 					// method not allowed for HEAD, try GET
 					continue;
-				} else if (statusCode === 403) {
-					// 403 often means bot protection, but could also be a real error
-					// mark as warning so user can manually verify
-					return {
-						url,
-						status: "warning",
-						statusCode,
-						error: "403 Forbidden - may be bot protection or a real error, please verify manually",
-					};
 				} else {
 					// 4xx/5xx status = broken
 					// Requirement: 4.4

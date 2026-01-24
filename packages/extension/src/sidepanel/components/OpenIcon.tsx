@@ -4,7 +4,7 @@ interface OpenIconProps {
 	className?: string;
 }
 
-export const OpenIcon: React.FC<OpenIconProps> = ({ className = "" }) => (
+export const OpenIcon: React.FC<OpenIconProps> = ({ className = "w-4 h-4" }) => (
 	<svg
 		className={className}
 		fill="none"

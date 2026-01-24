@@ -175,9 +175,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
  */
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
 	try {
-		const tab = await chrome.tabs.get(tabId);
-		if (!tab.url) return;
-		
+		let tab;
+
+			// try to get the tab, but ignore errors, since this will throw if the tab
+			// doesn't exist, annoyingly
+		try { tab = await chrome.tabs.get(tabId); } catch (err) {}
+
+		if (!tab?.url) return;
+
 		await updateSidePanelForTab(tabId, tab.url);
 		await updateContextMenuVisibility(tab.url);
 	} catch (err) {

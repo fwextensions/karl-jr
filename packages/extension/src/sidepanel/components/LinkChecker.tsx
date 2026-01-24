@@ -52,88 +52,144 @@ const ProgressBar = ({ checked, total }: { checked: number; total: number }) => 
 	);
 };
 
-const IssueItem = ({ result }: { result: LinkCheckResult }) => (
-	<div className="p-3 bg-gray-50 rounded border border-gray-100 text-sm">
-		<div className="font-medium text-gray-900 mb-1 flex items-center gap-2">
-			<span className={
-				result.status === "broken" ? "text-red-600" :
-				result.status === "timeout" ? "text-yellow-600" :
-				result.status === "warning" ? "text-orange-500" :
-				result.status === "insecure" ? "text-amber-600" :
-				result.status === "redirect" ? "text-blue-600" :
-				"text-orange-600"
-			}>
-				{result.status === "broken" && `${result.statusCode || "Error"}`}
-				{result.status === "timeout" && "Timeout"}
-				{result.status === "error" && "Error"}
-				{result.status === "warning" && "Warning"}
-				{result.status === "insecure" && "Insecure"}
-				{result.status === "redirect" && "Redirect"}
-			</span>
-		</div>
-		{result.text && (
-			<div className="text-gray-600 mb-1">
-				<span className="font-medium">Text:</span> {result.text}
+const getStatusText = (statusCode: number | undefined): string => {
+	if (!statusCode) return "";
+	
+	// common 4xx status codes
+	const statusTexts: Record<number, string> = {
+		400: "Bad Request",
+		401: "Unauthorized",
+		402: "Payment Required",
+		403: "Forbidden",
+		404: "Not Found",
+		405: "Method Not Allowed",
+		406: "Not Acceptable",
+		407: "Proxy Authentication Required",
+		408: "Request Timeout",
+		409: "Conflict",
+		410: "Gone",
+		411: "Length Required",
+		412: "Precondition Failed",
+		413: "Payload Too Large",
+		414: "URI Too Long",
+		415: "Unsupported Media Type",
+		416: "Range Not Satisfiable",
+		417: "Expectation Failed",
+		418: "I'm a teapot",
+		421: "Misdirected Request",
+		422: "Unprocessable Entity",
+		423: "Locked",
+		424: "Failed Dependency",
+		425: "Too Early",
+		426: "Upgrade Required",
+		428: "Precondition Required",
+		429: "Too Many Requests",
+		431: "Request Header Fields Too Large",
+		451: "Unavailable For Legal Reasons",
+	};
+	
+	return statusTexts[statusCode] || "";
+};
+
+const IssueItem = ({ result }: { result: LinkCheckResult }) => {
+	const statusText = getStatusText(result.statusCode);
+	
+	return (
+		<div className="p-3 bg-gray-50 rounded border border-gray-100 text-sm">
+			<div className="font-medium text-gray-900 mb-1 flex items-center gap-2">
+				<span className={
+					result.status === "broken" ? "text-red-600" :
+					result.status === "timeout" ? "text-yellow-600" :
+					result.status === "warning" ? "text-orange-500" :
+					result.status === "insecure" ? "text-amber-600" :
+					result.status === "redirect" ? "text-blue-600" :
+					"text-orange-600"
+				}>
+					{result.status === "broken" && result.statusCode && (
+						<>
+							{result.statusCode}
+							{statusText && ` ${statusText}`}
+						</>
+					)}
+					{result.status === "broken" && !result.statusCode && "Error"}
+					{result.status === "timeout" && "Timeout"}
+					{result.status === "error" && "Error"}
+					{result.status === "warning" && "Warning"}
+					{result.status === "insecure" && "Insecure"}
+					{result.status === "redirect" && "Redirect"}
+				</span>
 			</div>
-		)}
-		<div className="text-gray-600 break-all">
-			<span className="font-medium">URL:</span>{" "}
-			<a href={result.url} target="_blank" rel="noopener noreferrer" className="text-sfgov-blue hover:underline">
-				{result.url}
-			</a>
-		</div>
-		{result.finalUrl && result.status === "redirect" && (
-			<div className="text-gray-600 break-all mt-1">
-				<span className="font-medium">Final URL:</span>{" "}
-				<a href={result.finalUrl} target="_blank" rel="noopener noreferrer" className="text-sfgov-blue hover:underline">
-					{result.finalUrl}
+			{result.text && (
+				<div className="text-gray-600 mb-1">
+					<span className="font-medium">Text:</span> {result.text}
+				</div>
+			)}
+			<div className="text-gray-600 break-all">
+				<span className="font-medium">URL:</span>{" "}
+				<a href={result.url} target="_blank" rel="noopener noreferrer" className="text-sfgov-blue hover:underline">
+					{result.url}
 				</a>
 			</div>
-		)}
-		{result.error && (
-			<div className="text-gray-500 text-xs mt-1">{result.error}</div>
-		)}
-	</div>
-);
+			{result.finalUrl && result.status === "redirect" && (
+				<div className="text-gray-600 break-all mt-1">
+					<span className="font-medium">Final URL:</span>{" "}
+					<a href={result.finalUrl} target="_blank" rel="noopener noreferrer" className="text-sfgov-blue hover:underline">
+						{result.finalUrl}
+					</a>
+				</div>
+			)}
+			{result.error && (
+				<div className="text-gray-500 text-xs mt-1">{result.error}</div>
+			)}
+		</div>
+	);
+};
 
 const Results = ({ results, totalChecked }: { results: LinkCheckResult[]; totalChecked: number }) => {
-	const brokenLinks = results.filter(r => r.status === "broken" || r.status === "timeout" || r.status === "error");
-	const warningLinks = results.filter(r => r.status === "warning");
-	const insecureLinks = results.filter(r => r.status === "insecure");
-	const redirectLinks = results.filter(r => r.status === "redirect");
-	const issueCount = brokenLinks.length + warningLinks.length + insecureLinks.length;
+	// only 404s are considered truly broken
+	const brokenLinks = results.filter(r => r.status === "broken" && r.statusCode === 404);
+	// everything else goes in the "check" section
+	const checkLinks = results.filter(r => 
+		(r.status === "broken" && r.statusCode !== 404) ||
+		r.status === "timeout" ||
+		r.status === "error" ||
+		r.status === "warning" ||
+		r.status === "insecure" ||
+		r.status === "redirect"
+	);
+	const issueCount = brokenLinks.length + checkLinks.length;
 
 	return (
-		<div className="mt-4 space-y-3">
+		<div className="mt-4 space-y-4">
 			<div className="text-sm text-gray-500 font-medium">
 				Checked {totalChecked} link{totalChecked === 1 ? "" : "s"}, found {issueCount} issue{issueCount === 1 ? "" : "s"}:
 			</div>
+
+			{(brokenLinks.length > 0 || checkLinks.length > 0) && (
+				<div className="text-xs text-gray-600 mb-3 italic">
+					The automated check may report broken links that actually work for users. We recommend double-checking these links manually.
+				</div>
+			)}
+
 			{brokenLinks.length > 0 && (
-				<div className="space-y-2 pr-1">
-					{brokenLinks.map((result, index) => (
-						<IssueItem key={index} result={result} />
-					))}
+				<div className="space-y-2">
+					<div className="text-sm font-semibold text-red-600">Likely Issues ({brokenLinks.length})</div>
+					<div className="space-y-2 pr-1">
+						{brokenLinks.map((result, index) => (
+							<IssueItem key={index} result={result} />
+						))}
+					</div>
 				</div>
 			)}
-			{warningLinks.length > 0 && (
-				<div className="space-y-2 mt-4 pr-1">
-					{warningLinks.map((result, index) => (
-						<IssueItem key={`warning-${index}`} result={result} />
-					))}
-				</div>
-			)}
-			{insecureLinks.length > 0 && (
-				<div className="space-y-2 mt-4 pr-1">
-					{insecureLinks.map((result, index) => (
-						<IssueItem key={`insecure-${index}`} result={result} />
-					))}
-				</div>
-			)}
-			{redirectLinks.length > 0 && (
-				<div className="space-y-2 mt-4 pr-1">
-					{redirectLinks.map((result, index) => (
-						<IssueItem key={`redirect-${index}`} result={result} />
-					))}
+			
+			{checkLinks.length > 0 && (
+				<div className="space-y-2">
+					<div className="text-sm font-semibold text-amber-600">Possible Issues ({checkLinks.length})</div>
+					<div className="space-y-2 pr-1">
+						{checkLinks.map((result, index) => (
+							<IssueItem key={`check-${index}`} result={result} />
+						))}
+					</div>
 				</div>
 			)}
 		</div>
@@ -269,7 +325,7 @@ export function LinkChecker({
 					// track completion
 					const duration = Date.now() - startTime;
 					const brokenLinks = finalResults.filter(r =>
-						r.status === "broken" || r.status === "timeout" || r.status === "error"
+						r.status === "broken" && r.statusCode === 404
 					).length;
 					const insecureLinks = finalResults.filter(r => r.status === "insecure").length;
 
@@ -311,10 +367,18 @@ export function LinkChecker({
 		}
 	};
 
-	const brokenCount = results.filter(r => r.status === "broken" || r.status === "timeout" || r.status === "error").length;
-	const warningCount = results.filter(r => r.status === "warning").length;
-	const insecureCount = results.filter(r => r.status === "insecure").length;
-	const issueCount = brokenCount + warningCount + insecureCount;
+	// only 404s are considered truly broken
+	const brokenCount = results.filter(r => r.status === "broken" && r.statusCode === 404).length;
+	// everything else is in the "check" category
+	const checkCount = results.filter(r => 
+		(r.status === "broken" && r.statusCode !== 404) ||
+		r.status === "timeout" ||
+		r.status === "error" ||
+		r.status === "warning" ||
+		r.status === "insecure" ||
+		r.status === "redirect"
+	).length;
+	const issueCount = brokenCount + checkCount;
 
 	return (
 		<div className="space-y-4">
@@ -344,7 +408,7 @@ export function LinkChecker({
 
 			{hasRun && results.length > 0 && issueCount === 0 && !error && (
 				<div className="p-3 bg-green-50 text-green-700 text-sm rounded border border-green-100">
-					All {results.length} link{results.length === 1 ? "" : "s"} are working!
+					All links are working!
 				</div>
 			)}
 

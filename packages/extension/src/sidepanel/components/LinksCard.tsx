@@ -102,8 +102,8 @@ export const LinksCard: React.FC<LinksCardProps> = ({ files, pageUrl }) => {
 	useEffect(() => {
 		const fetchLinks = async () => {
 			try {
-				const tabs = await chrome.tabs.query(
-					{ active: true, currentWindow: true });
+				const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+
 				if (tabs[0]?.id) {
 					const results = await chrome.scripting.executeScript({
 						target: { tabId: tabs[0].id },
@@ -157,7 +157,7 @@ export const LinksCard: React.FC<LinksCardProps> = ({ files, pageUrl }) => {
 
 	return (
 		<Card title="Links" collapsible>
-			<div className="space-y-2">
+			<div className="space-y-2 mb-2">
 				{pdfs.length > 0 &&
 					<LinksList
 						title="PDFs"
@@ -176,9 +176,10 @@ export const LinksCard: React.FC<LinksCardProps> = ({ files, pageUrl }) => {
 					/>
 				}
 
+{/*
 				{external.length > 0 &&
 					<LinksList
-						title="External Links"
+						title="Links to Other Sites"
 						links={external}
 						linkType="hostname"
 						defaultText="Untitled Link"
@@ -187,16 +188,19 @@ export const LinksCard: React.FC<LinksCardProps> = ({ files, pageUrl }) => {
 
 				{internal.length > 0 &&
 					<LinksList
-						title="Internal Links"
+						title="Links to sf.gov"
 						links={internal}
 						linkType="pathname"
 						defaultText="Untitled Link"
 					/>
 				}
+*/}
 			</div>
-			<div className="mt-3">
+			{hasAnyLinks ? (
 				<LinkChecker pageUrl={pageUrl} />
-			</div>
+			) : (
+				<p className="text-sm text-gray-500 italic mt-3">No links on this page</p>
+			)}
 		</Card>
 	);
 };

@@ -177,15 +177,18 @@ export default function App()
 				)}
 
 				<PageHeader pageData={pageData} />
+				<FeedbackCard pagePath={pagePath} />
 				<MediaAssetsCard images={pageData.images} files={pageData.files} />
 				<LinksCard files={pageData.files} pageUrl={currentUrl} />
 				{pageData.formConfirmation && (
 					<FormConfirmationCard formConfirmation={pageData.formConfirmation} currentUrl={currentUrl} />
 				)}
-				<FeedbackCard pagePath={pagePath} />
 				<MetadataCard
 					pageId={pageData.id}
 					translations={pageData.translations}
+					primaryAgency={pageData.primaryAgency}
+					contentType={pageData.contentType}
+					schema={pageData.schema}
 				/>
 			</div>
 		</Container>

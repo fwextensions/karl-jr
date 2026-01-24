@@ -62,7 +62,7 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 	if (!hasImages && !hasFiles) {
 		return (
 			<Card title="Images and Documents" collapsible>
-				<p className="text-sm text-gray-500 italic">No media assets available</p>
+				<p className="text-sm text-gray-500 italic">No media assets on this page</p>
 			</Card>
 		);
 	}
@@ -72,7 +72,7 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 			<div className="space-y-4">
 				{/* Images Section */}
 				<div>
-					<h3 className="text-sm font-semibold text-gray-700 mb-2">Images</h3>
+					<h3 className="text-sm font-semibold text-gray-700 mb-2">Images ({images.length})</h3>
 					{hasImages ? (
 						<ul className="w-full space-y-2">
 							{images.map((image) => (
@@ -105,7 +105,7 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 
 				{/* Files Section */}
 				<div>
-					<h3 className="text-sm font-semibold text-gray-700 mb-2">Documents</h3>
+					<h3 className="text-sm font-semibold text-gray-700 mb-2">Documents ({files.length})</h3>
 					{hasFiles ? (
 						<ul className="w-full space-y-2">
 							{files.map((file) => (
