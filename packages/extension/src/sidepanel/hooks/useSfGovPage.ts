@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiError, CacheEntry, WagtailPage } from "@sf-gov/shared";
 import { findPageById, findPageBySlug } from "@/api/wagtail-client";
 import { extractPageIdFromAdminUrl, extractPageSlug } from "@/lib/urlUtils.ts";
+import { trackEvent } from "@/lib/analytics";
 
 /**
  * Cache time-to-live in milliseconds (5 minutes)
@@ -417,10 +418,10 @@ export function useSfGovPage(): UseSfGovPageReturn {
 		
 		// Check if state changed meaningfully
 		const stateChanged = !currentTabStateRef.current || 
-							currentTabStateRef.current.slug !== slug ||
-							currentTabStateRef.current.isOnSfGov !== onSfGov ||
-							currentTabStateRef.current.isAdminPage !== isAdminPage ||
-							currentTabStateRef.current.pageId !== pageId;
+			currentTabStateRef.current.slug !== slug ||
+			currentTabStateRef.current.isOnSfGov !== onSfGov ||
+			currentTabStateRef.current.isAdminPage !== isAdminPage ||
+			currentTabStateRef.current.pageId !== pageId;
 		
 		if (!stateChanged && pageData) {
 			// State unchanged and we already have data, skip update
@@ -443,6 +444,17 @@ export function useSfGovPage(): UseSfGovPageReturn {
 		// Clear preview mode if we're leaving an admin page
 		if (currentTabStateRef.current && !isAdminPage && (previewUrl || isPreviewMode)) {
 			console.log("Leaving admin page, clearing preview mode");
+			
+			// track preview mode exited
+			if (isPreviewMode && previewTimestamp > 0) {
+				const duration = Date.now() - previewTimestamp;
+				trackEvent("preview_mode_exited", {
+					page_id: currentTabStateRef.current.pageId,
+					page_url: currentTabStateRef.current?.url,
+					duration_ms: duration
+				});
+			}
+			
 			setPreviewUrl(null);
 			setIsPreviewMode(false);
 			setPreviewTimestamp(0);
@@ -561,6 +573,16 @@ export function useSfGovPage(): UseSfGovPageReturn {
 				}
 				
 				console.log("Received preview URL update:", { url: message.url, timestamp: message.timestamp });
+				
+				// track preview mode entered (only if not already in preview mode)
+				if (!isPreviewMode) {
+					trackEvent("preview_mode_entered", {
+						page_id: currentTabStateRef.current?.pageId,
+						page_url: currentTabStateRef.current?.url,
+						preview_timestamp: message.timestamp
+					});
+				}
+				
 				setPreviewUrl(message.url);
 				setIsPreviewMode(true);
 				setPreviewTimestamp(message.timestamp);
@@ -596,7 +618,7 @@ export function useSfGovPage(): UseSfGovPageReturn {
 			chrome.runtime.onMessage.removeListener(onMessage);
 			console.log("Preview message listener removed");
 		};
-	}, [fetchPageData, fetchPageDataById]);
+	}, [fetchPageData, fetchPageDataById, isPreviewMode]);
 
 	/**
 	 * Set up Chrome tab event listeners

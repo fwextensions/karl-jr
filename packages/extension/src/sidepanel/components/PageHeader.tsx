@@ -7,9 +7,10 @@ import { Button } from "@/sidepanel/components/Button.tsx";
 
 interface PageHeaderProps {
 	pageData: WagtailPage;
+	currentUrl: string;
 }
 
-export const PageHeader: React.FC<PageHeaderProps> = ({ pageData }) => {
+export const PageHeader: React.FC<PageHeaderProps> = ({ pageData, currentUrl }) => {
 	const { title, id } = pageData;
 
 	const editUrl = `https://api.sf.gov/admin/pages/${id}/edit/`;
@@ -17,7 +18,8 @@ export const PageHeader: React.FC<PageHeaderProps> = ({ pageData }) => {
 	const handleClick = () => {
 		trackEvent("edit_button_clicked", {
 			page_id: id,
-			trigger: "sidepanel_button"
+			page_url: currentUrl,
+			trigger: "sidepanel_button",
 		});
 		window.open(editUrl, "_blank");
 	};

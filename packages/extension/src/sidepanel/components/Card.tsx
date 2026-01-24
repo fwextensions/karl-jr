@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { trackEvent } from "@/lib/analytics";
 
 const getStorageKey = (title: string) => `card_${title.replace(/\s+/g, "_")}_expanded`;
 
@@ -31,6 +32,12 @@ export const Card: React.FC<CardProps> = ({
 		const newExpanded = !isExpanded;
 		setIsExpanded(newExpanded);
 		localStorage.setItem(getStorageKey(title), String(newExpanded));
+		
+		// track card expansion/collapse
+		trackEvent(newExpanded ? "card_expanded" : "card_collapsed", {
+			card_name: title
+		});
+		
 		onExpandedChange?.(newExpanded);
 	};
 

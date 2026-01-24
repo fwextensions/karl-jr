@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useSfGovPage } from "./hooks/useSfGovPage";
 import { LoadingState } from "./components/LoadingState";
 import { ErrorState } from "./components/ErrorState";
@@ -33,6 +33,9 @@ export default function App()
 		retry
 	} = useSfGovPage();
 
+	// track the last URL we sent a sidepanel_viewed event for
+	const lastTrackedUrlRef = useRef<string | null>(null);
+
 	// initialize analytics
 	useEffect(() => {
 		initAnalytics();
@@ -59,6 +62,12 @@ export default function App()
 		// for admin pages, track immediately (no pageData needed for iframe view)
 		// for public pages, wait until pageData is loaded
 		if (!isAdminPage && !pageData) return;
+
+		// check if we've already tracked this URL (prevents duplicate events during same page load)
+		if (lastTrackedUrlRef.current === currentUrl) return;
+
+		// mark this URL as tracked
+		lastTrackedUrlRef.current = currentUrl;
 
 		trackEvent("sidepanel_viewed", {
 			is_admin_page: isAdminPage,
@@ -176,7 +185,7 @@ export default function App()
 					</div>
 				)}
 
-				<PageHeader pageData={pageData} />
+				<PageHeader pageData={pageData} currentUrl={currentUrl} />
 				<FeedbackCard pagePath={pagePath} />
 				<MediaAssetsCard images={pageData.images} files={pageData.files} />
 				<LinksCard files={pageData.files} pageUrl={currentUrl} />
