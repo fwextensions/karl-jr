@@ -142,7 +142,7 @@ export default function App()
 
 	return (
 		<Container>
-			<div className="max-w-3xl mx-auto space-y-4">
+			<div className="max-w-3xl mx-auto space-y-4 [&>*:last-child]:mb-0">
 				{isPreviewMode && previewTimestamp > 0 && (
 					<PreviewBanner timestamp={previewTimestamp} />
 				)}

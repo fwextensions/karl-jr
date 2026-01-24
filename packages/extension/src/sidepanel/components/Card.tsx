@@ -37,7 +37,7 @@ export const Card: React.FC<CardProps> = ({
 	const showContent = !collapsible || isExpanded;
 
 	return (
-		<div className={`bg-white border border-gray-200 rounded-lg shadow-sm p-4 ${className} ${collapsible && isExpanded ? "mb-4" : ""}`}>
+		<div className={`bg-white border border-gray-200 rounded-lg shadow-sm p-4 mb-4 ${className}`}>
 			{title && (
 				<button
 					onClick={toggleExpanded}

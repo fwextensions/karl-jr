@@ -1,7 +1,7 @@
 import React from "react";
 import { Card } from "./Card";
-import type { Translation } from "@sf-gov/shared";
 import { OpenIcon } from "@/sidepanel/components/OpenIcon.tsx";
+import type { Translation, FormSchema } from "@sf-gov/shared";
 
 interface MetadataCardProps {
 	pageId: number;
@@ -11,11 +11,7 @@ interface MetadataCardProps {
 		url: string;
 	} | null;
 	contentType: string;
-	schema?: {
-		title: string;
-		project: string;
-		_id: string;
-	} | null;
+	schema?: FormSchema;
 }
 
 const CreateNewLink = ({ contentType }: { contentType: string }) => (
