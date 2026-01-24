@@ -200,7 +200,7 @@ export const FeedbackCard: React.FC<FeedbackCardProps> = ({ pagePath }) => {
 			<div className="space-y-4">
 				<div className="bg-gray-50 p-3 rounded-md mb-6 border border-gray-100">
 					<div className="grid grid-cols-2 gap-4 text-center">
-						<div>
+						<div title="Total feedback responses, including those with no comment">
 							<div className="text-2xl font-bold text-gray-900">{stats.total}</div>
 							<div className="text-xs text-gray-500 uppercase tracking-wide">Total Feedback</div>
 						</div>

@@ -1,3 +1,5 @@
+import "posthog-js/dist/surveys";
+import "posthog-js/dist/exception-autocapture";
 import { PostHog } from "posthog-js/dist/module.no-external";
 import { v7 as uuidv7 } from "uuid";
 import { getCurrentUser } from "@/api/wagtail-client";
