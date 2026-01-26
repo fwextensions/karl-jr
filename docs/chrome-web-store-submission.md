@@ -83,6 +83,9 @@ All scripts are executed only on SF.gov domains and are used solely to analyze p
 #### sidePanel
 **Justification**: The core interface of the extension. The side panel displays page information, metadata, and administrative tools when users click the toolbar button while on SF.gov pages. This provides a non-intrusive way to access content management information without navigating away from the page being reviewed.
 
+#### storage
+**Justification**: Used to store a persistent anonymous device ID for usage analytics. This ID is generated locally using a UUID and stored in chrome.storage.local to be available in the service worker. The device ID contains no personal information and is used solely to track aggregate extension usage patterns. No other data is stored using this permission.
+
 #### tabs
 **Justification**: Required to:
 1. Detect which tab is currently active to display relevant page information in the side panel
