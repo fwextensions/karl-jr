@@ -133,15 +133,14 @@ export const LinksCard: React.FC<LinksCardProps> = ({ files, pageUrl }) => {
 		fetchLinks();
 	}, [files]);
 
-	const { pdfs, otherFiles, external, internal } = links;
-	const hasAnyLinks = pdfs.length > 0 ||
-		otherFiles.length > 0 ||
+	const { otherFiles, external, internal } = links;
+	const hasAnyLinks = otherFiles.length > 0 ||
 		external.length > 0 ||
 		internal.length > 0;
 
 	if (isLoading) {
 		return (
-			<Card title="Links" collapsible>
+			<Card title="Broken links" collapsible>
 				<p className="text-sm text-gray-500 italic">Loading...</p>
 			</Card>
 		);
@@ -149,27 +148,18 @@ export const LinksCard: React.FC<LinksCardProps> = ({ files, pageUrl }) => {
 
 	if (!hasAnyLinks) {
 		return (
-			<Card title="Links" collapsible>
+			<Card title="Broken links" collapsible>
 				<p className="text-sm text-gray-500 italic">No links found</p>
 			</Card>
 		);
 	}
 
 	return (
-		<Card title="Links" collapsible>
+		<Card title="Broken links" collapsible>
 			<div className="space-y-2 mb-2">
-				{pdfs.length > 0 &&
-					<LinksList
-						title="PDFs"
-						links={pdfs}
-						linkType="filename"
-						defaultText="Untitled PDF"
-					/>
-				}
-
 				{otherFiles.length > 0 &&
 					<LinksList
-						title="Other Files"
+						title="Other files"
 						links={otherFiles}
 						linkType="filename"
 						defaultText="Untitled File"
