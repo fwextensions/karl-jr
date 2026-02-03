@@ -21,7 +21,7 @@ const CreateNewLink = ({ contentType }: { contentType: string }) => (
 		title="Create a new page of this type"
 		target="_blank"
 	>
-		<OpenIcon /> Create New
+		<OpenIcon /> Create new
 	</a>
 );
 

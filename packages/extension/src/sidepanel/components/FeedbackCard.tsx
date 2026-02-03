@@ -92,7 +92,7 @@ const FeedbackItem: React.FC<FeedbackItemProps> = ({ record }) => {
 	);
 };
 
-const CARD_TITLE = "User Feedback";
+const CARD_TITLE = "User feedback";
 
 export const FeedbackCard: React.FC<FeedbackCardProps> = ({ pagePath }) => {
 	const [feedback, setFeedback] = useState<FeedbackRecord[]>([]);

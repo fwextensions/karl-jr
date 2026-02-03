@@ -206,7 +206,7 @@ interface LinkCheckerProps {
 
 export function LinkChecker({
 	pageUrl,
-	buttonText = "Check Links",
+	buttonText = "Check links",
 	onCheckStart,
 	onCheckComplete,
 	onCheckError,
