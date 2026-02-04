@@ -1,367 +1,292 @@
-export interface A11yResult {
-	fullUrl: string;
-	type: string;
-	details: string;
-	linkText: string;
-	targetUrl: string;
-	imageFilename: string;
+// accessibility check utilities
+
+export interface HeadingInfo {
+	level: number;
+	text: string;
+	element: HTMLElement;
 }
 
-export function runA11yCheck(): A11yResult[]
-{
-	const TRIGGER_PHRASES = [
+export interface HeadingNestingIssue {
+	fromLevel: number;
+	toLevel: number;
+	fromText: string;
+	toText: string;
+	toElement: HTMLElement;
+}
+
+export interface HeadingWithContext {
+	level: number;
+	text: string;
+	contentBelow: string;
+	allHeadings: string[];
+	pageTitle: string;
+}
+
+export interface HeadingDescriptivenessResult {
+	heading: string;
+	level: number;
+	isHelpful: boolean;
+	reason: string;
+	contentPreview: string;
+}
+
+/**
+ * extract all headings from the page and check for improper nesting
+ * this function runs in the page context via chrome.scripting.executeScript
+ */
+export function checkHeadingNesting(): HeadingNestingIssue[] {
+	const headings = Array.from(document.querySelectorAll("h1, h2, h3, h4, h5, h6"));
+	const issues: HeadingNestingIssue[] = [];
+
+	for (let i = 1; i < headings.length; i++) {
+		const prevHeading = headings[i - 1];
+		const currHeading = headings[i];
+
+		const prevLevel = parseInt(prevHeading.tagName.substring(1));
+		const currLevel = parseInt(currHeading.tagName.substring(1));
+
+		// check if heading level jumps by more than 1 (e.g., H2 to H4)
+		if (currLevel > prevLevel + 1) {
+			issues.push({
+				fromLevel: prevLevel,
+				toLevel: currLevel,
+				fromText: prevHeading.textContent?.trim() || "",
+				toText: currHeading.textContent?.trim() || "",
+				toElement: currHeading as HTMLElement,
+			});
+		}
+	}
+
+	return issues;
+}
+
+/**
+ * highlight elements on the page with yellow background
+ * this function runs in the page context via chrome.scripting.executeScript
+ */
+export function highlightElements(selector: string): void {
+	const elements = document.querySelectorAll(selector);
+	elements.forEach(el => {
+		if (el instanceof HTMLElement) {
+			el.style.backgroundColor = "yellow";
+			el.style.outline = "2px solid orange";
+		}
+	});
+}
+
+/**
+ * analyze heading descriptiveness using heuristics
+ * checks if headings are specific, logical, and accurately describe content
+ */
+export function analyzeHeadingDescriptiveness(
+	headingsWithContext: HeadingWithContext[]
+): HeadingDescriptivenessResult[] {
+	const results: HeadingDescriptivenessResult[] = [];
+
+	// headings to ignore (common structural headings that don't need analysis)
+	const ignoredHeadings = [
+		"services",
+		"resources",
+		"address",
+		"email",
+		"phone",
+		"calendar",
+		"upcoming calendar",
+		"contact information",
+		"news",
+		"related",
+		"partner agencies",
+		"contact us",
+	];
+
+	// common vague/generic headings that are often unhelpful
+	const vaguePhrases = [
+		"overview",
+		"introduction",
+		"details",
+		"information",
+		"more",
+		"learn more",
 		"click here",
 		"read more",
-		"learn more",
-		"go here",
-		"see more",
-		"click",
-		"details",
-		"see details",
-		"more",
-		"see all",
-		"view all",
+		"general",
+		"other",
+		"miscellaneous",
+		"additional",
+		"related",
 	];
-	const EXCLUDED_PHRASES = ["learn more about us"];
-	const ALLOWED_OFFICE_EXTENSIONS = [
-		".doc",
-		".docx",
-		".xls",
-		".xlsx",
-		".ppt",
-		".pptx",
-	];
-	const RAW_URL_PATTERN = /(?<!@)\b(?:https?:\/\/|www\.)[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/[^\s<>"\']*)?/g;
 
-	function isValidUrl(url: string): boolean
-	{
-		if (url.includes("mailto:") || url.includes("@")) {
-			return false;
+	// filter out ignored headings FIRST
+	const filteredHeadings = headingsWithContext.filter(h => 
+		!ignoredHeadings.includes(h.text.toLowerCase())
+	);
+
+	console.log("Filtered headings for analysis:", filteredHeadings.map(h => h.text));
+
+	// check for duplicate headings AFTER filtering
+	const headingCounts = new Map<string, number>();
+	filteredHeadings.forEach(h => {
+		const lower = h.text.toLowerCase();
+		headingCounts.set(lower, (headingCounts.get(lower) || 0) + 1);
+	});
+
+	console.log("Heading counts:", Array.from(headingCounts.entries()));
+
+	for (const heading of filteredHeadings) {
+		const headingLower = heading.text.toLowerCase();
+		const contentLower = heading.contentBelow.toLowerCase();
+		const words = heading.text.split(/\s+/).filter(w => w.length > 0);
+		const count = headingCounts.get(headingLower)!;
+
+		let isHelpful = true;
+		let reason = "Heading is clear and descriptive";
+
+		// check 1: heading is too short (1-2 words) and generic
+		if (words.length <= 2 && vaguePhrases.some(phrase => headingLower.includes(phrase))) {
+			isHelpful = false;
+			reason = "Heading is too vague or generic";
 		}
-		const VALID_TLDS = [
-			".com",
-			".org",
-			".net",
-			".gov",
-			".edu",
-			".info",
-			".io",
-			".co",
-			".us",
-			".ca",
-		];
-		return VALID_TLDS.some((tld) => url.toLowerCase().endsWith(tld));
-	}
-
-	//@ts-ignore
-	function analyzeTables(
-		doc: Document,
-		url: string): A11yResult[]
-	{
-		const results: A11yResult[] = [];
-		try {
-			const tables = doc.querySelectorAll("table");
-			tables.forEach((table) => {
-				const caption = table.querySelector("caption");
-				const tableCaption = caption?.textContent?.trim() || "";
-
-				const rows = Array.from(table.querySelectorAll("tr"));
-				const rowHeaders = rows.some((tr) => {
-					const ths = tr.querySelectorAll("th");
-					const tds = tr.querySelectorAll("td");
-					return ths.length > 0 && tds.length > 0;
-				});
-
-				let colHeaders = false;
-				const thead = table.querySelector("thead");
-				if (thead && thead.querySelectorAll("th").length > 0) {
-					colHeaders = true;
-				} else if (rows.length > 0) {
-					const firstRow = rows[0];
-					const cells = Array.from(firstRow.querySelectorAll("th, td"));
-					if (cells.every((cell) => cell.tagName === "TH")) {
-						colHeaders = true;
-					}
-				}
-
-				results.push({
-					fullUrl: url,
-					type: "Table Info",
-					details: `Caption: ${tableCaption}, Row headers: ${rowHeaders ?
-						"yes" : "no"
-					}, Column headers: ${colHeaders ? "yes" : "no"}`,
-					linkText: "",
-					targetUrl: "",
-					imageFilename: "",
-				});
-			});
-		} catch (e) {
-			console.error(`[Table error] ${url}: ${e}`);
+		// check 2: heading is a single generic word
+		else if (words.length === 1 && vaguePhrases.includes(headingLower)) {
+			isHelpful = false;
+			reason = "Single-word heading is not descriptive enough";
 		}
-		return results;
-	}
+		// check 3: duplicate headings on the same page
+		else if (count > 1) {
+			isHelpful = false;
+			reason = "Duplicate heading - users may be confused about which section to navigate to";
+			console.log(`Duplicate detected: "${heading.text}" appears ${count} times`);
+		}
+		// check 4: heading doesn't relate to content below
+		else if (heading.contentBelow.length > 50) {
+			// extract key terms from heading (words longer than 3 chars)
+			const headingTerms = words
+				.filter(w => w.length > 3)
+				.map(w => w.toLowerCase().replace(/[^a-z0-9]/g, ""));
 
-	//@ts-ignore
-	function findInaccessibleLinks(
-		doc: Document,
-		url: string
-	): A11yResult[]
-	{
-		const results: A11yResult[] = [];
-		try {
-			// --- Inaccessible <a> tags ---
-			const links = doc.querySelectorAll("a[href]");
-			links.forEach((link) => {
-				const aTag = link as HTMLAnchorElement;
-				const linkText = aTag.textContent?.trim().toLowerCase() || "";
-				if (TRIGGER_PHRASES.some((phrase) => linkText.includes(phrase))) {
-					if (
-						EXCLUDED_PHRASES.every((excluded) => !linkText.includes(excluded))
-					) {
-						results.push({
-							fullUrl: url,
-							type: "Inaccessible Link",
-							details: "",
-							linkText: aTag.textContent?.trim() || "",
-							targetUrl: aTag.href,
-							imageFilename: "",
-						});
-					}
-				}
-			});
-
-			// --- Inaccessible <button> and <input> ---
-			const buttons = Array.from(doc.querySelectorAll("button"));
-			const inputs = Array.from(
-				doc.querySelectorAll("input[type='submit'], input[type='button']")
+			// check if any heading terms appear in the content
+			const hasMatchingTerms = headingTerms.some(term => 
+				contentLower.includes(term)
 			);
-			const allButtons = [...buttons, ...inputs];
 
-			allButtons.forEach((tag) => {
-				const element = tag as HTMLElement;
-				const label =
-					element.getAttribute("aria-label") ||
-					element.getAttribute("title") ||
-					(element as HTMLInputElement).value ||
-					element.textContent?.trim() ||
-					"";
-
-				const labelText = label.trim().toLowerCase();
-				const hasLabel = !!labelText;
-
-				const isIconOnly =
-					!hasLabel &&
-					(element.querySelector("svg") ||
-						Array.from(element.classList).some((cls) => cls.includes("icon")));
-
-				if (
-					isIconOnly ||
-					!hasLabel ||
-					TRIGGER_PHRASES.some((phrase) => labelText.includes(phrase))
-				) {
-					if (
-						EXCLUDED_PHRASES.every((excluded) => !labelText.includes(excluded))
-					) {
-						results.push({
-							fullUrl: url,
-							type: "Inaccessible Button",
-							details: "Missing accessible label (icon-only)",
-							linkText: label || "",
-							targetUrl: "",
-							imageFilename: "",
-						});
-					}
-				}
-			});
-
-			// --- Raw URLs ---
-			const visibleText = doc.body.innerText;
-			const rawUrls = visibleText.match(RAW_URL_PATTERN) || [];
-			rawUrls.forEach((rawUrl) => {
-				let processedUrl = rawUrl;
-				if (!processedUrl.startsWith("http://") &&
-					!processedUrl.startsWith("https://")) {
-					processedUrl = "https://" + processedUrl;
-				}
-				if (isValidUrl(processedUrl)) {
-					results.push({
-						fullUrl: url,
-						type: "Inaccessible Link",
-						details: "",
-						linkText: "",
-						targetUrl: processedUrl,
-						imageFilename: "",
-					});
-				}
-			});
-		} catch (e) {
-			console.error(`[Inaccessible link error] ${url}: ${e}`);
-		}
-		return results;
-	}
-
-	//@ts-ignore
-	function extractPdfLinks(
-		doc: Document,
-		url: string): A11yResult[]
-	{
-		const results: A11yResult[] = [];
-		try {
-			const links = doc.querySelectorAll("a[href]");
-			links.forEach((link) => {
-				const aTag = link as HTMLAnchorElement;
-				const href = aTag.href;
-				if (href.toLowerCase().endsWith(".pdf")) {
-					results.push({
-						fullUrl: url,
-						type: "PDF Link",
-						details: "",
-						linkText: aTag.textContent?.trim() || "",
-						targetUrl: href,
-						imageFilename: "",
-					});
-				}
-			});
-		} catch (e) {
-			console.error(`[PDF link error] ${url}: ${e}`);
-		}
-		return results;
-	}
-
-	//@ts-ignore
-	function findImagesWithAlt(
-		doc: Document,
-		url: string
-	): A11yResult[]
-	{
-		const results: A11yResult[] = [];
-		try {
-			const images = doc.querySelectorAll("img");
-			images.forEach((img) => {
-				const altText = img.getAttribute("alt");
-				const src = img.src;
-				if (altText && altText.trim()) {
-					const filename = src.split("/").pop() || "";
-					results.push({
-						fullUrl: url,
-						type: "Image with alt text",
-						details: `alt="${altText}"`,
-						linkText: "",
-						targetUrl: src,
-						imageFilename: filename,
-					});
-				}
-			});
-		} catch (e) {
-			console.error(`[Image alt text error] ${url}: ${e}`);
-		}
-		return results;
-	}
-
-	function findImagesMissingAlt(
-		doc: Document,
-		url: string
-	): A11yResult[]
-	{
-		const results: A11yResult[] = [];
-		try {
-			const images = doc.querySelectorAll("img");
-			images.forEach((img) => {
-				const altText = img.getAttribute("alt");
-				const src = img.src;
-				if (!altText || altText.trim() === "") {
-					const filename = src.split("/").pop() || "";
-					results.push({
-						fullUrl: url,
-						type: "Image missing alt text",
-						details: "",
-						linkText: "",
-						targetUrl: src,
-						imageFilename: filename,
-					});
-				}
-			});
-		} catch (e) {
-			console.error(`[Missing alt error] ${url}: ${e}`);
-		}
-		return results;
-	}
-
-	function checkHeadingHierarchy(
-		doc: Document,
-		url: string
-	): A11yResult[]
-	{
-		const results: A11yResult[] = [];
-		try {
-			const headings = Array.from(
-				doc.querySelectorAll("h1, h2, h3, h4, h5, h6")
-			);
-			const hierarchy = headings.map((h) => parseInt(h.tagName[1]));
-			let prev = 0;
-			for (const level of hierarchy) {
-				if (prev && level > prev + 1) {
-					results.push({
-						fullUrl: url,
-						type: "Heading hierarchy issue",
-						details: `Improper heading sequence: ${hierarchy.join(", ")}`,
-						linkText: "",
-						targetUrl: "",
-						imageFilename: "",
-					});
-					break;
-				}
-				prev = level;
+			if (headingTerms.length > 0 && !hasMatchingTerms) {
+				isHelpful = false;
+				reason = "Heading doesn't match the content below it";
 			}
-		} catch (e) {
-			console.error(`[Heading hierarchy error] ${url}: ${e}`);
 		}
-		return results;
-	}
-
-	//@ts-ignore
-	function findOfficeLinks(
-		doc: Document,
-		url: string): A11yResult[]
-	{
-		const results: A11yResult[] = [];
-		try {
-			const links = doc.querySelectorAll("a[href]");
-			links.forEach((link) => {
-				const aTag = link as HTMLAnchorElement;
-				const href = aTag.href.split("?")[0].split("#")[0];
-				for (const ext of ALLOWED_OFFICE_EXTENSIONS) {
-					if (href.toLowerCase().endsWith(ext)) {
-						results.push({
-							fullUrl: url,
-							type: "Office File Link",
-							details: "",
-							linkText: aTag.textContent?.trim() || "",
-							targetUrl: aTag.href,
-							imageFilename: "",
-						});
-						break;
-					}
-				}
-			});
-		} catch (e) {
-			console.error(`[Office file link error] ${url}: ${e}`);
+		// check 5: heading is just a question mark or punctuation
+		else if (heading.text.replace(/[^a-zA-Z0-9]/g, "").length === 0) {
+			isHelpful = false;
+			reason = "Heading contains no meaningful text";
 		}
-		return results;
+		// check 6: heading is very long (likely a sentence, not a heading)
+		else if (words.length > 15) {
+			isHelpful = false;
+			reason = "Heading is too long - consider making it more concise";
+		}
+		// positive indicators: specific, descriptive headings
+		else if (words.length >= 3 && words.length <= 8) {
+			// headings with good length and specific terms are likely helpful
+			const hasSpecificTerms = words.some(w => 
+				w.length > 5 && !vaguePhrases.includes(w.toLowerCase())
+			);
+			if (hasSpecificTerms) {
+				isHelpful = true;
+				reason = "Heading is specific and descriptive";
+			}
+		}
+
+		results.push({
+			heading: heading.text,
+			level: heading.level,
+			isHelpful,
+			reason,
+			contentPreview: heading.contentBelow.substring(0, 150),
+		});
 	}
-
-	const url = window.location.href;
-	const document = window.document;
-	const results: A11yResult[] = [];
-
-	// Only running checks that return actual issues/errors
-	results.push(...analyzeTables(document, url)); // Info only
-//	results.push(...findInaccessibleLinks(document, url));
-//	results.push(...extractPdfLinks(document, url)); // Warning/Info
-//	results.push(...findImagesWithAlt(document, url)); // Good info
-	results.push(...findImagesMissingAlt(document, url));
-	results.push(...checkHeadingHierarchy(document, url));
-	results.push(...findOfficeLinks(document, url)); // Warning/Info
 
 	return results;
+}
+
+/**
+ * extract headings with their context for descriptiveness analysis
+ * this function runs in the page context via chrome.scripting.executeScript
+ */
+export function extractHeadingsWithContext(): HeadingWithContext[] {
+	const headings = Array.from(document.querySelectorAll("h2, h3, h4, h5, h6"));
+	const allHeadingTexts = Array.from(document.querySelectorAll("h1, h2, h3, h4, h5, h6"))
+		.map(h => h.textContent?.trim() || "");
+	const pageTitle = document.title;
+
+	// filter out hidden elements and deduplicate by element reference
+	const uniqueHeadings = new Map<HTMLElement, boolean>();
+	const filteredHeadings = headings.filter(h => {
+		if (!(h instanceof HTMLElement)) return false;
+		
+		// skip if already processed
+		if (uniqueHeadings.has(h)) return false;
+		
+		// skip hidden elements (display: none, visibility: hidden, or zero dimensions)
+		const style = window.getComputedStyle(h);
+		if (style.display === "none" || 
+			style.visibility === "hidden" || 
+			h.offsetWidth === 0 || 
+			h.offsetHeight === 0) {
+			return false;
+		}
+		
+		uniqueHeadings.set(h, true);
+		return true;
+	});
+
+	return filteredHeadings.map(heading => {
+		const headingText = heading.textContent?.trim() || "";
+		const level = parseInt(heading.tagName.substring(1));
+
+		// get content below the heading until the next heading of same or higher level
+		let contentBelow = "";
+		let currentElement = heading.nextElementSibling;
+		
+		while (currentElement) {
+			const tagName = currentElement.tagName.toLowerCase();
+			
+			// stop if we hit another heading of same or higher level
+			if (tagName.match(/^h[1-6]$/)) {
+				const nextLevel = parseInt(tagName.substring(1));
+				if (nextLevel <= level) {
+					break;
+				}
+			}
+			
+			// collect text content from paragraphs, lists, divs, etc.
+			const text = currentElement.textContent?.trim() || "";
+			if (text) {
+				contentBelow += text + " ";
+			}
+			
+			currentElement = currentElement.nextElementSibling;
+		}
+
+		return {
+			level,
+			text: headingText,
+			contentBelow: contentBelow.trim().substring(0, 500), // limit to 500 chars
+			allHeadings: allHeadingTexts,
+			pageTitle,
+		};
+	});
+}
+
+/**
+ * remove all highlights from the page
+ * this function runs in the page context via chrome.scripting.executeScript
+ */
+export function removeHighlights(): void {
+	const elements = document.querySelectorAll("[style*='background-color: yellow']");
+	elements.forEach(el => {
+		if (el instanceof HTMLElement) {
+			el.style.backgroundColor = "";
+			el.style.outline = "";
+		}
+	});
 }
