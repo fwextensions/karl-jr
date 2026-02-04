@@ -9,6 +9,7 @@ import { FormConfirmationCard } from "./components/FormConfirmationCard";
 import { PreviewBanner } from "./components/PreviewBanner";
 import { FeedbackCard } from "./components/FeedbackCard";
 import { LinksCard } from "./components/LinksCard";
+import { A11yCard } from "./components/A11yCard";
 import { initAnalytics, trackEvent, trackError, identifyUser } from "@/lib/analytics";
 
 const Container = ({ children }: { children: React.ReactNode }) => (
@@ -189,6 +190,7 @@ export default function App()
 				<FeedbackCard pagePath={pagePath} />
 				<MediaAssetsCard images={pageData.images} files={pageData.files} />
 				<LinksCard files={pageData.files} pageUrl={currentUrl} />
+				<A11yCard pageUrl={currentUrl} />
 				{pageData.formConfirmation && (
 					<FormConfirmationCard formConfirmation={pageData.formConfirmation} currentUrl={currentUrl} />
 				)}
