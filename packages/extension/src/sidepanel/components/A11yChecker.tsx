@@ -421,7 +421,7 @@ const ReadabilityScoreResults = ({ result }: { result: ReadabilityScore | null }
 			</div>
 			
 			<div className="text-xs text-gray-600 italic">
-				Score calculated using adaptive Automated Readability Index, adjusted for sentence complexity. This test errs on the side of caution and results may be artificially high. Results will be close to, but may not exactly match, Hemingway App scores. SF.gov aims for 8th grade level or lower for accessibility.
+				Score calculated using adaptive Automated Readability Index, adjusted for sentence complexity. Results will be close to, but may not exactly match, Hemingway App scores. SF.gov aims for 8th grade level or lower for accessibility.
 			</div>
 		</div>
 	);
