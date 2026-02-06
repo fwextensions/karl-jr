@@ -818,8 +818,8 @@ export function calculateReadabilityScore(): ReadabilityScore {
 		console.log("[Readability Debug] Adjustment applied:", adjustment);
 		console.log("[Readability Debug] Final adjusted score:", score);
 		
-		// round to 1 decimal place
-		score = Math.round(score * 10) / 10;
+		// round to whole number
+		score = Math.round(score);
 		
 		// determine grade level
 		if (score < 1) {
