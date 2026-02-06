@@ -865,7 +865,7 @@ export function calculateReadabilityScore(): ReadabilityScore {
 			gradeLevel = "College";
 			interpretation = "Very difficult to read, college level";
 		} else {
-			gradeLevel = "College Graduate";
+			gradeLevel = "Post-graduate";
 			interpretation = "Very difficult to read, professional level";
 		}
 		
