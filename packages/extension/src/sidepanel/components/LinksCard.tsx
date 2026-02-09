@@ -1,12 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Card } from "./Card";
 import { OpenIcon } from "@/sidepanel/components/OpenIcon.tsx";
-import {
-	extractCategorizedLinks,
-	type CategorizedLinks,
-	type LinkInfo
-} from "@/lib/link-check";
-import type { MediaAsset } from "@sf-gov/shared";
+import type { CategorizedLinks, LinkInfo } from "@/lib/link-check";
 import { LinkChecker } from "@/sidepanel/components/LinkChecker.tsx";
 
 function extractDisplayURL(
@@ -86,59 +81,24 @@ function LinksList({
 }
 
 interface LinksCardProps {
-	files: MediaAsset[],
-	pageUrl: string
+	pageUrl: string,
+	categorizedLinks: CategorizedLinks | null,
+	isLoadingLinks: boolean
 }
 
-export const LinksCard: React.FC<LinksCardProps> = ({ files, pageUrl }) => {
-	const [links, setLinks] = useState<CategorizedLinks>({
-		pdfs: [],
-		otherFiles: [],
-		external: [],
-		internal: [],
-	});
-	const [isLoading, setIsLoading] = useState(true);
-
-	useEffect(() => {
-		const fetchLinks = async () => {
-			try {
-				const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-
-				if (tabs[0]?.id) {
-					const results = await chrome.scripting.executeScript({
-						target: { tabId: tabs[0].id },
-						func: extractCategorizedLinks,
-					});
-					if (results[0]?.result) {
-						const allLinks = results[0].result;
-
-						// filter out PDFs that are already in the files metadata
-						const fileUrls = new Set(files.map(f => f.url));
-						const filteredPdfs = allLinks.pdfs.filter(
-							pdf => !fileUrls.has(pdf.url));
-
-						setLinks({
-							...allLinks,
-							pdfs: filteredPdfs,
-						});
-					}
-				}
-			} catch (error) {
-				console.error("Failed to extract links:", error);
-			} finally {
-				setIsLoading(false);
-			}
-		};
-
-		fetchLinks();
-	}, [files]);
-
-	const { otherFiles, external, internal } = links;
+export const LinksCard: React.FC<LinksCardProps> = ({
+	pageUrl,
+	categorizedLinks,
+	isLoadingLinks
+}) => {
+	const otherFiles = categorizedLinks?.otherFiles ?? [];
+	const external = categorizedLinks?.external ?? [];
+	const internal = categorizedLinks?.internal ?? [];
 	const hasAnyLinks = otherFiles.length > 0 ||
 		external.length > 0 ||
 		internal.length > 0;
 
-	if (isLoading) {
+	if (isLoadingLinks) {
 		return (
 			<Card title="Broken links" collapsible>
 				<p className="text-sm text-gray-500 italic">Loading...</p>

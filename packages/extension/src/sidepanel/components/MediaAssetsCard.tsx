@@ -1,74 +1,50 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Card } from "./Card";
 import type { MediaAsset } from "@sf-gov/shared";
 import { EditIcon } from "@/sidepanel/components/EditIcon.tsx";
 import { OpenIcon } from "@/sidepanel/components/OpenIcon.tsx";
 import { trackEvent } from "@/lib/analytics";
-import {
-	extractCategorizedLinks,
-	type CategorizedLinks,
-	type LinkInfo
-} from "@/lib/link-check";
+import type { CategorizedLinks, LinkInfo } from "@/lib/link-check";
+
+// helper function to extract filename from URL
+const getFilenameFromUrl = (url: string): string => {
+	try {
+		const urlPath = new URL(url).pathname;
+		const filename = urlPath.split("/").pop();
+		return filename || "";
+	} catch {
+		return "";
+	}
+};
 
 interface MediaAssetsCardProps {
 	images: MediaAsset[];
 	files: MediaAsset[];
+	categorizedLinks: CategorizedLinks | null;
+	isLoadingLinks: boolean;
 }
 
 export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 	images,
-	files
+	files,
+	categorizedLinks,
+	isLoadingLinks
 }) => {
 	const hasImages = images.length > 0;
 	const hasFiles = files.length > 0;
-	const [documentLinks, setDocumentLinks] = useState<LinkInfo[]>([]);
-	const [isLoadingDocLinks, setIsLoadingDocLinks] = useState(true);
 
-	// helper function to extract filename from URL
-	const getFilenameFromUrl = (url: string): string => {
-		try {
-			const urlPath = new URL(url).pathname;
-			const filename = urlPath.split("/").pop();
-			return filename || "";
-		} catch {
-			return "";
-		}
-	};
+	// derive document links from categorized links, filtering out duplicates with file metadata
+	const documentLinks: LinkInfo[] = (() => {
+		if (!categorizedLinks) return [];
 
-	// fetch document links (PDFs and other files) from the page
-	useEffect(() => {
-		const fetchDocumentLinks = async () => {
-			try {
-				const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+		const fileUrls = new Set(files.map(f => f.url));
+		const filteredPdfs = categorizedLinks.pdfs.filter(
+			pdf => !fileUrls.has(pdf.url));
+		const filteredOtherFiles = categorizedLinks.otherFiles.filter(
+			file => !fileUrls.has(file.url));
 
-				if (tabs[0]?.id) {
-					const results = await chrome.scripting.executeScript({
-						target: { tabId: tabs[0].id },
-						func: extractCategorizedLinks,
-					});
-					if (results[0]?.result) {
-						const allLinks = results[0].result;
-
-						// filter out documents that are already in the files metadata
-						const fileUrls = new Set(files.map(f => f.url));
-						const filteredPdfs = allLinks.pdfs.filter(
-							pdf => !fileUrls.has(pdf.url));
-						const filteredOtherFiles = allLinks.otherFiles.filter(
-							file => !fileUrls.has(file.url));
-
-						// combine PDFs and other document files
-						setDocumentLinks([...filteredPdfs, ...filteredOtherFiles]);
-					}
-				}
-			} catch (error) {
-				console.error("Failed to extract document links:", error);
-			} finally {
-				setIsLoadingDocLinks(false);
-			}
-		};
-
-		fetchDocumentLinks();
-	}, [files]);
+		return [...filteredPdfs, ...filteredOtherFiles];
+	})();
 
 	const handleImageClick = async (imageId: number) => {
 		// track image click
@@ -120,7 +96,7 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 	};
 
 	if (!hasImages && !hasFiles && documentLinks.length === 0) {
-		if (isLoadingDocLinks) {
+		if (isLoadingLinks) {
 			return (
 				<Card title="Images and documents" collapsible>
 					<p className="text-sm text-gray-500 italic">Loading...</p>
@@ -133,8 +109,6 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 			</Card>
 		);
 	}
-
-	const totalDocuments = files.length + documentLinks.length;
 
 	return (
 		<Card title="Images and documents" collapsible>
@@ -177,7 +151,9 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 
 				{/* Documents Section - includes both files and document links */}
 				<div>
-					<h3 className="text-sm font-semibold text-gray-700 mb-2">Documents ({totalDocuments})</h3>
+					<h3 className="text-sm font-semibold text-gray-700 mb-2">
+						Documents ({isLoadingLinks ? `${files.length}+` : files.length + documentLinks.length})
+					</h3>
 					{hasFiles || documentLinks.length > 0 ? (
 						<ul className="w-full space-y-2">
 							{/* Documents from files metadata first */}
@@ -213,10 +189,10 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 							})}
 
 							{/* Document links from page content second */}
-							{documentLinks.map((docLink, index) => {
+							{documentLinks.map((docLink) => {
 								const filename = getFilenameFromUrl(docLink.url);
 								return (
-									<li key={`doc-${index}`} className="flex items-center gap-2">
+									<li key={docLink.url} className="flex items-center gap-2">
 										<a
 											href={docLink.url}
 											target="_blank"

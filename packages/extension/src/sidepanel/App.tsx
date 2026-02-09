@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSfGovPage } from "./hooks/useSfGovPage";
 import { LoadingState } from "./components/LoadingState";
 import { ErrorState } from "./components/ErrorState";
@@ -10,6 +10,10 @@ import { PreviewBanner } from "./components/PreviewBanner";
 import { FeedbackCard } from "./components/FeedbackCard";
 import { LinksCard } from "./components/LinksCard";
 import { initAnalytics, trackEvent, trackError, identifyUser } from "@/lib/analytics";
+import {
+	extractCategorizedLinks,
+	type CategorizedLinks
+} from "@/lib/link-check";
 
 const Container = ({ children }: { children: React.ReactNode }) => (
 	<div className="min-h-screen p-4 bg-gray-50">
@@ -86,6 +90,41 @@ export default function App()
 			});
 		}
 	}, [error, currentUrl]);
+
+	// extract categorized links from page content once, shared by MediaAssetsCard and LinksCard
+	const [categorizedLinks, setCategorizedLinks] = useState<CategorizedLinks | null>(null);
+	const [isLoadingLinks, setIsLoadingLinks] = useState(true);
+
+	useEffect(() => {
+		if (!pageData) {
+			setCategorizedLinks(null);
+			return;
+		}
+
+		setIsLoadingLinks(true);
+
+		const fetchLinks = async () => {
+			try {
+				const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+
+				if (tabs[0]?.id) {
+					const results = await chrome.scripting.executeScript({
+						target: { tabId: tabs[0].id },
+						func: extractCategorizedLinks,
+					});
+					if (results[0]?.result) {
+						setCategorizedLinks(results[0].result);
+					}
+				}
+			} catch (error) {
+				console.error("Failed to extract links:", error);
+			} finally {
+				setIsLoadingLinks(false);
+			}
+		};
+
+		fetchLinks();
+	}, [pageData]);
 
 	if (isLoading) {
 		return (
@@ -187,8 +226,17 @@ export default function App()
 
 				<PageHeader pageData={pageData} currentUrl={currentUrl} />
 				<FeedbackCard pagePath={pagePath} />
-				<MediaAssetsCard images={pageData.images} files={pageData.files} />
-				<LinksCard files={pageData.files} pageUrl={currentUrl} />
+				<MediaAssetsCard
+					images={pageData.images}
+					files={pageData.files}
+					categorizedLinks={categorizedLinks}
+					isLoadingLinks={isLoadingLinks}
+				/>
+				<LinksCard
+					pageUrl={currentUrl}
+					categorizedLinks={categorizedLinks}
+					isLoadingLinks={isLoadingLinks}
+				/>
 				{pageData.formConfirmation && (
 					<FormConfirmationCard formConfirmation={pageData.formConfirmation} currentUrl={currentUrl} />
 				)}
