@@ -148,6 +148,90 @@ export const FeedbackCard: React.FC<FeedbackCardProps> = ({ pagePath }) => {
 		loadFeedback();
 	};
 
+	const handleDownloadCSV = () => {
+		// ensure all feedback is visible before downloading
+		if (!showAll && feedback.length > INITIAL_DISPLAY_COUNT) {
+			setShowAll(true);
+		}
+
+		// generate CSV content
+		const csvContent = generateCSV(feedback);
+
+		// create blob and download
+		const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement("a");
+		link.setAttribute("href", url);
+		link.setAttribute("download", `feedback-${pagePath.replace(/\//g, "-")}-${new Date().toISOString().split("T")[0]}.csv`);
+		link.style.visibility = "hidden";
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+		URL.revokeObjectURL(url);
+
+		// track download event
+		trackEvent("feedback_csv_downloaded", {
+			page_path: pagePath,
+			total_records: feedback.length,
+		});
+	};
+
+	const generateCSV = (records: FeedbackRecord[]): string => {
+		// CSV headers
+		const headers = [
+			"Submission ID",
+			"Date",
+			"Was Helpful",
+			"Issue Category",
+			"What Was Helpful",
+			"Additional Details",
+			"Referrer",
+			"Airtable ID"
+		];
+
+		// escape CSV field (handle quotes and commas)
+		const escapeCSVField = (field: string | null): string => {
+			if (field === null || field === undefined) {
+				return "";
+			}
+			const stringField = String(field);
+			// if field contains comma, quote, or newline, wrap in quotes and escape existing quotes
+			if (stringField.includes(",") || stringField.includes("\"") || stringField.includes("\n")) {
+				return `"${stringField.replace(/"/g, "\"\"")}"`;
+			}
+			return stringField;
+		};
+
+		// format date to readable format
+		const formatDate = (dateString: string): string => {
+			try {
+				const date = new Date(dateString);
+				return date.toLocaleDateString("en-US", {
+					month: "short",
+					day: "numeric",
+					year: "numeric",
+				});
+			} catch {
+				return dateString;
+			}
+		};
+
+		// create CSV rows
+		const rows = records.map(record => [
+			escapeCSVField(record.submissionId),
+			escapeCSVField(formatDate(record.submissionCreated)),
+			escapeCSVField(record.wasHelpful),
+			escapeCSVField(record.issueCategory),
+			escapeCSVField(record.whatWasHelpful),
+			escapeCSVField(record.additionalDetails),
+			escapeCSVField(record.referrer),
+			escapeCSVField(record.id),
+		].join(","));
+
+		// combine headers and rows
+		return [headers.join(","), ...rows].join("\n");
+	};
+
 	const renderContent = () => {
 		// loading state
 		if (isLoading) {
@@ -202,6 +286,13 @@ export const FeedbackCard: React.FC<FeedbackCardProps> = ({ pagePath }) => {
 							<div className="text-xs text-gray-500 uppercase tracking-wide">Page Helpful?</div>
 						</div>
 					</div>
+					{feedback.length > 0 && (
+						<div className="mt-3 pt-3 border-t border-gray-200">
+							<Button onClick={handleDownloadCSV}>
+								Download CSV ({feedback.length} {feedback.length === 1 ? "item" : "items"})
+							</Button>
+						</div>
+					)}
 				</div>
 
 				{feedback.length === 0 ? (
