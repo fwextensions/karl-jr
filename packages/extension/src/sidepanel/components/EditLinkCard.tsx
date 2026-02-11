@@ -1,5 +1,5 @@
 import React from "react";
-import { EditIcon } from "@/sidepanel/components/EditIcon.tsx";
+import { EditIcon } from "@/sidepanel/icons/EditIcon.tsx";
 import { trackEvent } from "@/lib/analytics";
 
 interface EditLinkCardProps {

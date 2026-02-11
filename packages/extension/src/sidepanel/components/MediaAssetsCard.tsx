@@ -1,8 +1,8 @@
 import React from "react";
 import { Card } from "./Card";
 import type { MediaAsset } from "@sf-gov/shared";
-import { EditIcon } from "@/sidepanel/components/EditIcon.tsx";
-import { OpenIcon } from "@/sidepanel/components/OpenIcon.tsx";
+import { EditIcon } from "@/sidepanel/icons/EditIcon.tsx";
+import { OpenIcon } from "@/sidepanel/icons/OpenIcon.tsx";
 import { trackEvent } from "@/lib/analytics";
 import type { CategorizedLinks, LinkInfo } from "@/lib/link-check";
 

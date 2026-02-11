@@ -1,6 +1,6 @@
 import React from "react";
 import { Card } from "./Card";
-import { OpenIcon } from "@/sidepanel/components/OpenIcon.tsx";
+import { OpenIcon } from "@/sidepanel/icons/OpenIcon.tsx";
 import type { Translation, FormSchema } from "@sf-gov/shared";
 
 interface MetadataCardProps {

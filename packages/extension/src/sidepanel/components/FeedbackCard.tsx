@@ -3,11 +3,19 @@ import type { FeedbackRecord, FeedbackStats, AirtableApiError } from "@sf-gov/sh
 import { getFeedback, clearCache } from "@/api/airtable-client";
 import { Button } from "@/sidepanel/components/Button.tsx";
 import { Card } from "@/sidepanel/components/Card.tsx";
+import { CSVIcon } from "@/sidepanel/icons/CSVIcon.tsx";
 import { trackEvent } from "@/lib/analytics";
 
-interface FeedbackCardProps {
-	pagePath: string;
-}
+const DownloadButton = ({ onClick }: { onClick: () => void }) => (
+	<a
+		href="#"
+		className="w-10 h-10 ml-1 p-1 inline-block bg-sfgov-blue rounded-sm text-white opacity-70 hover:opacity-100 flex-none mt-0.5"
+		title="Download feedback as a CSV file"
+		onClick={onClick}
+	>
+		<CSVIcon className="w-full h-full" aria-hidden="true" />
+	</a>
+);
 
 interface FeedbackItemProps {
 	record: FeedbackRecord;
@@ -94,6 +102,10 @@ const FeedbackItem: React.FC<FeedbackItemProps> = ({ record }) => {
 
 const CARD_TITLE = "User feedback";
 
+interface FeedbackCardProps {
+	pagePath: string;
+}
+
 export const FeedbackCard: React.FC<FeedbackCardProps> = ({ pagePath }) => {
 	const [feedback, setFeedback] = useState<FeedbackRecord[]>([]);
 	const [stats, setStats] = useState<FeedbackStats | null>(null);
@@ -148,6 +160,88 @@ export const FeedbackCard: React.FC<FeedbackCardProps> = ({ pagePath }) => {
 		loadFeedback();
 	};
 
+	const handleDownloadCSV = () => {
+		// ensure all feedback is visible before downloading
+		if (!showAll && feedback.length > INITIAL_DISPLAY_COUNT) {
+			setShowAll(true);
+		}
+
+		// generate CSV content
+		const csvContent = generateCSV(feedback);
+
+		// create blob and download
+		const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement("a");
+		link.setAttribute("href", url);
+		link.setAttribute("download", `feedback-${pagePath.replace(/\//g, "-")}-${new Date().toISOString().split("T")[0]}.csv`);
+		link.style.visibility = "hidden";
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+		URL.revokeObjectURL(url);
+
+		// track download event
+		trackEvent("feedback_csv_downloaded", {
+			page_path: pagePath,
+			total_records: feedback.length,
+		});
+	};
+
+	const generateCSV = (records: FeedbackRecord[]): string => {
+		// CSV headers
+		const headers = [
+			"Date",
+			"Issue Category",
+			"Was Helpful",
+			"What Was Helpful",
+			"Additional Details",
+			"Submission ID",
+			"Airtable ID"
+		];
+
+		// escape CSV field (handle quotes and commas)
+		const escapeCSVField = (field: string | null): string => {
+			if (field === null || field === undefined) {
+				return "";
+			}
+			const stringField = String(field);
+			// if field contains comma, quote, or newline, wrap in quotes and escape existing quotes
+			if (stringField.includes(",") || stringField.includes("\"") || stringField.includes("\n")) {
+				return `"${stringField.replace(/"/g, "\"\"")}"`;
+			}
+			return stringField;
+		};
+
+		// format date to readable format
+		const formatDate = (dateString: string): string => {
+			try {
+				const date = new Date(dateString);
+				return date.toLocaleDateString("en-US", {
+					month: "short",
+					day: "numeric",
+					year: "numeric",
+				});
+			} catch {
+				return dateString;
+			}
+		};
+
+		// create CSV rows
+		const rows = records.map(record => [
+			escapeCSVField(formatDate(record.submissionCreated)),
+			escapeCSVField(record.issueCategory),
+			escapeCSVField(record.wasHelpful),
+			escapeCSVField(record.whatWasHelpful),
+			escapeCSVField(record.additionalDetails),
+			escapeCSVField(record.submissionId),
+			escapeCSVField(record.id),
+		].join(","));
+
+		// combine headers and rows
+		return [headers.join(","), ...rows].join("\n");
+	};
+
 	const renderContent = () => {
 		// loading state
 		if (isLoading) {
@@ -191,8 +285,8 @@ export const FeedbackCard: React.FC<FeedbackCardProps> = ({ pagePath }) => {
 		// display feedback
 		return (
 			<div className="space-y-4">
-				<div className="bg-gray-50 p-3 rounded-md mb-6 border border-gray-100">
-					<div className="grid grid-cols-2 gap-4 text-center">
+				<div className="flex items-center gap-4 bg-gray-50 p-3 rounded-md mb-6 border border-gray-100">
+					<div className="grid grid-cols-2 gap-4 text-center flex-1">
 						<div title="Total feedback responses, including those without a comment">
 							<div className="text-2xl font-bold text-gray-900">{stats.total}</div>
 							<div className="text-xs text-gray-500 uppercase tracking-wide">Total Feedback</div>
@@ -202,6 +296,9 @@ export const FeedbackCard: React.FC<FeedbackCardProps> = ({ pagePath }) => {
 							<div className="text-xs text-gray-500 uppercase tracking-wide">Page Helpful?</div>
 						</div>
 					</div>
+					{feedback.length > 0 &&
+						<DownloadButton onClick={handleDownloadCSV} />
+					}
 				</div>
 
 				{feedback.length === 0 ? (

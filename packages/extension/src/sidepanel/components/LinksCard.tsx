@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Card } from "./Card";
-import { OpenIcon } from "@/sidepanel/components/OpenIcon.tsx";
+import { OpenIcon } from "@/sidepanel/icons/OpenIcon.tsx";
 import type { CategorizedLinks, LinkInfo } from "@/lib/link-check";
 import { LinkChecker } from "@/sidepanel/components/LinkChecker.tsx";
 

@@ -1,7 +1,7 @@
 import React from "react";
 import type { WagtailPage } from "@sf-gov/shared";
 import { Card } from "@/sidepanel/components/Card.tsx";
-import { EditIcon } from "@/sidepanel/components/EditIcon.tsx";
+import { EditIcon } from "@/sidepanel/icons/EditIcon.tsx";
 import { trackEvent } from "@/lib/analytics.ts";
 import { Button } from "@/sidepanel/components/Button.tsx";
 
