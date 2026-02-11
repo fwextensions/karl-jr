@@ -1,7 +1,7 @@
 import React from 'react'
 import { Card } from './Card'
 import type { Translation } from '@sf-gov/shared'
-import { OpenIcon } from "@/sidepanel/components/OpenIcon.tsx";
+import { OpenIcon } from "@/sidepanel/icons/OpenIcon.tsx";
 
 interface TranslationsCardProps {
   translations: Translation[]

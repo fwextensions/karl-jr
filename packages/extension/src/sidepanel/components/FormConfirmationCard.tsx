@@ -1,6 +1,6 @@
 import React from "react";
 import { Card } from "./Card";
-import { OpenIcon } from "./OpenIcon";
+import { OpenIcon } from "../icons/OpenIcon.tsx";
 import type { FormConfirmation } from "@sf-gov/shared";
 
 interface FormConfirmationCardProps {

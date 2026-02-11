@@ -3,11 +3,19 @@ import type { FeedbackRecord, FeedbackStats, AirtableApiError } from "@sf-gov/sh
 import { getFeedback, clearCache } from "@/api/airtable-client";
 import { Button } from "@/sidepanel/components/Button.tsx";
 import { Card } from "@/sidepanel/components/Card.tsx";
+import { CSVIcon } from "@/sidepanel/icons/CSVIcon.tsx";
 import { trackEvent } from "@/lib/analytics";
 
-interface FeedbackCardProps {
-	pagePath: string;
-}
+const DownloadButton = ({ onClick }: { onClick: () => void }) => (
+	<a
+		href="#"
+		className="w-10 h-10 ml-1 p-1 inline-block bg-sfgov-blue rounded-sm text-white opacity-70 hover:opacity-100 flex-none mt-0.5"
+		title="Download feedback as a CSV file"
+		onClick={onClick}
+	>
+		<CSVIcon className="w-full h-full" aria-hidden="true" />
+	</a>
+);
 
 interface FeedbackItemProps {
 	record: FeedbackRecord;
@@ -94,6 +102,10 @@ const FeedbackItem: React.FC<FeedbackItemProps> = ({ record }) => {
 
 const CARD_TITLE = "User feedback";
 
+interface FeedbackCardProps {
+	pagePath: string;
+}
+
 export const FeedbackCard: React.FC<FeedbackCardProps> = ({ pagePath }) => {
 	const [feedback, setFeedback] = useState<FeedbackRecord[]>([]);
 	const [stats, setStats] = useState<FeedbackStats | null>(null);
@@ -179,13 +191,12 @@ export const FeedbackCard: React.FC<FeedbackCardProps> = ({ pagePath }) => {
 	const generateCSV = (records: FeedbackRecord[]): string => {
 		// CSV headers
 		const headers = [
-			"Submission ID",
 			"Date",
-			"Was Helpful",
 			"Issue Category",
+			"Was Helpful",
 			"What Was Helpful",
 			"Additional Details",
-			"Referrer",
+			"Submission ID",
 			"Airtable ID"
 		];
 
@@ -218,13 +229,12 @@ export const FeedbackCard: React.FC<FeedbackCardProps> = ({ pagePath }) => {
 
 		// create CSV rows
 		const rows = records.map(record => [
-			escapeCSVField(record.submissionId),
 			escapeCSVField(formatDate(record.submissionCreated)),
-			escapeCSVField(record.wasHelpful),
 			escapeCSVField(record.issueCategory),
+			escapeCSVField(record.wasHelpful),
 			escapeCSVField(record.whatWasHelpful),
 			escapeCSVField(record.additionalDetails),
-			escapeCSVField(record.referrer),
+			escapeCSVField(record.submissionId),
 			escapeCSVField(record.id),
 		].join(","));
 
@@ -275,8 +285,8 @@ export const FeedbackCard: React.FC<FeedbackCardProps> = ({ pagePath }) => {
 		// display feedback
 		return (
 			<div className="space-y-4">
-				<div className="bg-gray-50 p-3 rounded-md mb-6 border border-gray-100">
-					<div className="grid grid-cols-2 gap-4 text-center">
+				<div className="flex items-center gap-4 bg-gray-50 p-3 rounded-md mb-6 border border-gray-100">
+					<div className="grid grid-cols-2 gap-4 text-center flex-1">
 						<div title="Total feedback responses, including those without a comment">
 							<div className="text-2xl font-bold text-gray-900">{stats.total}</div>
 							<div className="text-xs text-gray-500 uppercase tracking-wide">Total Feedback</div>
@@ -286,13 +296,9 @@ export const FeedbackCard: React.FC<FeedbackCardProps> = ({ pagePath }) => {
 							<div className="text-xs text-gray-500 uppercase tracking-wide">Page Helpful?</div>
 						</div>
 					</div>
-					{feedback.length > 0 && (
-						<div className="mt-3 pt-3 border-t border-gray-200">
-							<Button onClick={handleDownloadCSV}>
-								Download CSV ({feedback.length} {feedback.length === 1 ? "item" : "items"})
-							</Button>
-						</div>
-					)}
+					{feedback.length > 0 &&
+						<DownloadButton onClick={handleDownloadCSV} />
+					}
 				</div>
 
 				{feedback.length === 0 ? (
