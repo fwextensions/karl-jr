@@ -548,7 +548,6 @@ export function A11yChecker({
 	}, [pageUrl]);
 
 	const handleRunCheck = async () => {
-		console.log("A11yChecker: handleRunCheck called");
 		setIsLoading(true);
 		setError(null);
 		setHasRun(false);
@@ -570,6 +569,37 @@ export function A11yChecker({
 			if (!tab?.id) {
 				throw new Error("No active tab found");
 			}
+
+			// clean up any previous highlights from prior runs
+			await chrome.scripting.executeScript({
+				target: { tabId: tab.id },
+				func: () => {
+					// remove heading highlights
+					document.querySelectorAll("h1, h2, h3, h4, h5, h6").forEach(el => {
+						if (el instanceof HTMLElement) {
+							el.style.backgroundColor = "";
+							el.style.outline = "";
+						}
+					});
+					// remove table highlights
+					document.querySelectorAll("[data-a11y-table-issue]").forEach(el => {
+						el.removeAttribute("data-a11y-table-issue");
+						if (el instanceof HTMLElement) {
+							el.style.outline = "";
+							el.style.outlineOffset = "";
+						}
+					});
+					// remove video highlights
+					document.querySelectorAll("[data-a11y-video-issue]").forEach(el => {
+						el.removeAttribute("data-a11y-video-issue");
+						if (el instanceof HTMLElement) {
+							el.style.outline = "";
+							el.style.outlineOffset = "";
+						}
+					});
+					// link highlights are cleaned up by checkLinkAccessibility itself
+				},
+			});
 
 			// check heading nesting
 			const nestingResults = await chrome.scripting.executeScript({
@@ -650,8 +680,7 @@ export function A11yChecker({
 			});
 
 			const tableData = tableResults[0]?.result as TableAccessibilityResults | undefined;
-			console.log("Table check results:", tableData);
-			
+
 			if (tableData) {
 				setTableAccessibilityResults(tableData);
 
@@ -683,8 +712,7 @@ export function A11yChecker({
 			});
 
 			const videoData = videoResults[0]?.result as VideoAccessibilityResults | undefined;
-			console.log("Video check results:", videoData);
-			
+
 			if (videoData) {
 				setVideoAccessibilityResults(videoData);
 

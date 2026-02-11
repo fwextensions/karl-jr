@@ -690,9 +690,6 @@ export function calculateReadabilityScore(): ReadabilityScore {
 		textContent = bodyClone.textContent || "";
 	}
 	
-	console.log("[Readability Debug] Raw text length:", textContent.length);
-	console.log("[Readability Debug] First 200 chars:", textContent.substring(0, 200));
-	
 	// clean up text more aggressively like Hemingway
 	textContent = textContent
 		.trim()
@@ -709,9 +706,6 @@ export function calculateReadabilityScore(): ReadabilityScore {
 		// clean up extra spaces again
 		.replace(/\s+/g, " ")
 		.trim();
-	
-	console.log("[Readability Debug] Cleaned text length:", textContent.length);
-	console.log("[Readability Debug] Cleaned first 200 chars:", textContent.substring(0, 200));
 	
 	// count characters (letters only, like Hemingway likely does)
 	const characterCount = textContent.replace(/[^a-zA-Z]/g, "").length;
@@ -732,10 +726,6 @@ export function calculateReadabilityScore(): ReadabilityScore {
 	
 	const initialAvgWords = wordCount / sentences.length;
 	
-	console.log("[Readability Debug] Initial sentence count:", sentences.length);
-	console.log("[Readability Debug] Initial avg words per sentence:", initialAvgWords);
-	console.log("[Readability Debug] Sample sentences:", sentences.slice(0, 5));
-	
 	// detect if this is simple, instructional content (like marriage license page)
 	const hasSimplePatterns = /(?:what to|how to|you must|you need|you can|step \d|before you)/i.test(textContent);
 	const hasListPatterns = /(?:[-•*]\s|\d+\.\s)/g.test(textContent);
@@ -743,10 +733,6 @@ export function calculateReadabilityScore(): ReadabilityScore {
 	// be MUCH more conservative about additional sentence splitting
 	// Only split if we have very clear evidence of simple, instructional content
 	const isVerySimpleContent = (hasSimplePatterns && hasListPatterns) && initialAvgWords < 12;
-	
-	console.log("[Readability Debug] Has simple patterns:", hasSimplePatterns);
-	console.log("[Readability Debug] Has list patterns:", hasListPatterns);
-	console.log("[Readability Debug] Detected very simple content:", isVerySimpleContent);
 	
 	// Only do additional splitting for very clearly simple content
 	if (isVerySimpleContent) {
@@ -764,22 +750,18 @@ export function calculateReadabilityScore(): ReadabilityScore {
 		const additionalAvgWords = wordCount / additionalSentences.length;
 		if (additionalSentences.length > sentences.length && additionalAvgWords >= 8) {
 			sentences = additionalSentences;
-			console.log("[Readability Debug] Used additional splitting");
 		}
 	}
 	
 	// filter to meaningful sentences (be more lenient for complex content)
 	const minWords = isVerySimpleContent ? 3 : 5;
 	const finalSentences = sentences.filter(sentence => {
-		const wordCount = sentence.split(/\s+/).filter(w => /[a-zA-Z]/.test(w)).length;
-		return wordCount >= minWords;
+		const sentenceWordCount = sentence.split(/\s+/).filter(w => /[a-zA-Z]/.test(w)).length;
+		return sentenceWordCount >= minWords;
 	});
 	
 	const sentenceCount = finalSentences.length;
 	const finalAvgWords = wordCount / sentenceCount;
-	
-	console.log("[Readability Debug] Final sentence count:", sentenceCount);
-	console.log("[Readability Debug] Final avg words per sentence:", finalAvgWords);
 	
 	// calculate ARI score (pure formula, no adjustments yet)
 	let score = 0;
@@ -790,14 +772,9 @@ export function calculateReadabilityScore(): ReadabilityScore {
 	if (wordCount > 0 && sentenceCount > 0) {
 		const charsPerWord = characterCount / wordCount;
 		const wordsPerSentence = wordCount / sentenceCount;
-		
-		console.log("[Readability Debug] Chars per word:", charsPerWord);
-		console.log("[Readability Debug] Words per sentence:", wordsPerSentence);
-		
+
 		// standard ARI formula
 		const rawScore = 4.71 * charsPerWord + 0.5 * wordsPerSentence - 21.43;
-		
-		console.log("[Readability Debug] Raw ARI score:", rawScore);
 		
 		// be much more conservative with adjustments
 		// Only apply small adjustments for very clearly simple content
@@ -814,9 +791,6 @@ export function calculateReadabilityScore(): ReadabilityScore {
 		
 		// ensure minimum score of 0
 		score = Math.max(0, score);
-		
-		console.log("[Readability Debug] Adjustment applied:", adjustment);
-		console.log("[Readability Debug] Final adjusted score:", score);
 		
 		// round to whole number
 		score = Math.round(score);

@@ -190,7 +190,7 @@ export default function App()
 				<FeedbackCard pagePath={pagePath} />
 				<MediaAssetsCard images={pageData.images} files={pageData.files} />
 				<LinksCard files={pageData.files} pageUrl={currentUrl} />
-				<A11yCard pageUrl={currentUrl} />
+				<A11yCard pageUrl={currentUrl} images={pageData.images} />
 				{pageData.formConfirmation && (
 					<FormConfirmationCard formConfirmation={pageData.formConfirmation} currentUrl={currentUrl} />
 				)}
