@@ -213,8 +213,13 @@ chrome.runtime.onMessage.addListener((message, sender) => {
 		return;
 	}
 
-	// forward preview messages to side panel
-	if (message.type === "PREVIEW_URL_UPDATE" || message.type === "PREVIEW_UNAVAILABLE") {
+	// forward preview messages and page data extraction messages to side panel
+	if (
+		message.type === "PREVIEW_URL_UPDATE" ||
+		message.type === "PREVIEW_UNAVAILABLE" ||
+		message.type === "PAGE_DATA_EXTRACTED" ||
+		message.type === "PAGE_DATA_EXTRACTION_FAILED"
+	) {
 		console.log(`Forwarding message from tab ${sender.tab.id}:`, message.type);
 		
 		// forward to side panel (all extension contexts will receive this)

@@ -8,7 +8,7 @@ import {
 	setCachedResults,
 	clearLinkCheckerCache,
 } from "../lib/link-checker-cache";
-import { trackEvent, trackError, identifyUser } from "@/lib/analytics";
+import { trackEvent, trackError } from "@/lib/analytics";
 
 const SpinnerIcon = () => (
 	<svg
@@ -280,9 +280,6 @@ export function LinkChecker({
 				page_url: pageUrl,
 				link_count: links.length
 			});
-
-			// identify user since they're authenticated (link check requires auth)
-			identifyUser();
 
 			// create a map of URL to link text for later reference
 			const linkTextMap = new Map<string, string>();

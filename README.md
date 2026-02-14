@@ -287,6 +287,7 @@ See `.kiro/specs/monorepo-conversion/requirements.md` for detailed monorepo requ
 
 ## Documentation
 
+- [Token Authentication Deployment Guide](./docs/token-auth-deployment.md)
 - [React Documentation](https://reactjs.org/)
 - [Vite Documentation](https://vitejs.dev/)
 - [CRXJS Documentation](https://crxjs.dev/vite-plugin)

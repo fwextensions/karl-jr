@@ -9,6 +9,7 @@ import type {
 	LinkCheckCompleteEvent,
 	LinkCheckErrorEvent,
 } from "@sf-gov/shared";
+import { getAuthToken, clearAuthToken } from "./auth";
 
 /**
  * API Base URL
@@ -45,19 +46,30 @@ export class LinkCheckClient {
 	 * @throws Error if authentication fails or request cannot be initiated
 	 */
 	async startCheck(options: LinkCheckClientOptions): Promise<void> {
+		return this.startCheckInternal(options, false);
+	}
+
+	/**
+	 * Internal implementation of startCheck with retry logic
+	 * @param options - Configuration options including URLs and callbacks
+	 * @param isRetry - Whether this is a retry after 401
+	 */
+	private async startCheckInternal(options: LinkCheckClientOptions, isRetry: boolean): Promise<void> {
 		const { urls, pageUrl, onResult, onComplete, onError } = options;
 
 		// abort any existing check
 		this.abort();
 
-		// get Wagtail session ID from cookies
-		const sessionId = await this.getWagtailSessionId();
-		if (!sessionId) {
-			console.log("LinkCheckClient: No session ID found, aborting check");
-			onError("Not authenticated. Please log in to Wagtail.");
+		// get auth token
+		let token: string;
+		try {
+			token = await getAuthToken();
+			console.log("LinkCheckClient: Starting check with token");
+		} catch (error) {
+			console.log("LinkCheckClient: Failed to get auth token", error);
+			onError(error instanceof Error ? error.message : "Authentication failed");
 			return;
 		}
-		console.log("LinkCheckClient: Starting check with session", sessionId.substring(0, 8) + "...");
 
 		// create abort controller for cleanup
 		this.abortController = new AbortController();
@@ -74,15 +86,20 @@ export class LinkCheckClient {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
-					"X-Wagtail-Session": sessionId,
+					"Authorization": `Bearer ${token}`,
 					"X-SF-Gov-Extension": "companion",
 				},
 				body: JSON.stringify(payload),
 				signal: this.abortController.signal,
 			});
 
-			// handle authentication errors
+			// handle authentication errors with retry
 			if (response.status === 401) {
+				if (!isRetry) {
+					console.log("LinkCheckClient: Got 401, clearing token and retrying");
+					await clearAuthToken();
+					return this.startCheckInternal(options, true);
+				}
 				onError("Authentication failed. Please log in to Wagtail.");
 				return;
 			}
@@ -206,39 +223,6 @@ export class LinkCheckClient {
 		if (this.eventSource) {
 			this.eventSource.close();
 			this.eventSource = null;
-		}
-	}
-
-	/**
-	 * Retrieves the Wagtail session ID from browser cookies
-	 * @returns Promise resolving to the session ID string or null if not found
-	 */
-	private async getWagtailSessionId(): Promise<string | null> {
-		try {
-			// try to get cookie from api.sf.gov first (where admin is hosted)
-			let cookies = await chrome.cookies.getAll({
-				domain: "api.sf.gov",
-				name: "sessionid",
-			});
-
-			// fallback to .sf.gov domain if not found
-			if (cookies.length === 0) {
-				cookies = await chrome.cookies.getAll({
-					domain: ".sf.gov",
-					name: "sessionid",
-				});
-			}
-
-			if (cookies.length > 0) {
-				console.log("Found Wagtail session cookie:", cookies[0].domain);
-				return cookies[0].value;
-			}
-
-			console.log("No Wagtail session cookie found");
-			return null;
-		} catch (error) {
-			console.error("Failed to retrieve Wagtail session cookie:", error);
-			return null;
 		}
 	}
 }

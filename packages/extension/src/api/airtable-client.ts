@@ -4,6 +4,7 @@
  */
 
 import type { FeedbackResponse, AirtableApiError } from "@sf-gov/shared";
+import { getAuthToken, clearAuthToken } from "./auth";
 
 /**
  * API proxy endpoint URL
@@ -77,39 +78,6 @@ async function fetchWithTimeout(
 }
 
 /**
- * Retrieves the Wagtail session ID from browser cookies
- * @returns Promise resolving to the session ID string or null if not found
- */
-export async function getWagtailSessionId(): Promise<string | null> {
-	try {
-		// try to get cookie from api.sf.gov first (where admin is hosted)
-		let cookies = await chrome.cookies.getAll({
-			domain: "api.sf.gov",
-			name: "sessionid",
-		});
-
-		// fallback to .sf.gov domain if not found
-		if (cookies.length === 0) {
-			cookies = await chrome.cookies.getAll({
-				domain: ".sf.gov",
-				name: "sessionid",
-			});
-		}
-
-		if (cookies.length > 0) {
-			console.log("Found Wagtail session cookie:", cookies[0].domain);
-			return cookies[0].value;
-		}
-
-		console.log("No Wagtail session cookie found");
-		return null;
-	} catch (error) {
-		console.error("Failed to retrieve Wagtail session cookie:", error);
-		return null;
-	}
-}
-
-/**
  * Normalizes a page path for consistent matching
  * - Removes query parameters
  * - Removes trailing slashes (except for homepage)
@@ -150,67 +118,79 @@ export async function getFeedback(path: string): Promise<FeedbackResponse> {
 		return cached.data;
 	}
 
-	// get Wagtail session ID from cookies
-	const sessionId = await getWagtailSessionId();
-	if (!sessionId) {
-		throw createApiError("auth", "Not authenticated.");
-	}
-
 	const url = new URL(API_FEEDBACK_URL);
 	url.searchParams.set("pagePath", normalizedPath);
 
 	console.log("Fetching feedback from:", url.toString());
 	const fetchStart = Date.now();
 
-	try {
-		const response = await fetchWithTimeout(
-			url.toString(),
-			{
-				headers: {
-					"X-Wagtail-Session": sessionId,
-					"X-SF-Gov-Extension": "companion",
-				},
+	// attempt with current token, retry once on 401
+	for (let attempt = 0; attempt < 2; attempt++) {
+		try {
+			const token = await getAuthToken();
+
+			const response = await fetchWithTimeout(
+				url.toString(),
+				{
+					headers: {
+						"Authorization": `Bearer ${token}`,
+						"X-SF-Gov-Extension": "companion",
+					},
+				}
+			);
+
+			if (response.status === 401 && attempt === 0) {
+				// token expired or revoked -- clear and retry
+				console.log("Received 401, clearing token and retrying");
+				await clearAuthToken();
+				continue;
 			}
-		);
 
-		if (response.status === 401) {
-			throw createApiError("auth", "Invalid or expired session.", response.status);
-		}
-		if (response.status === 403) {
-			throw createApiError("auth", "Access denied. Please check your permissions.", response.status);
-		}
-		if (response.status === 429) {
-			throw createApiError("rate_limit", "Too many requests. Please wait a moment and try again.", response.status);
-		}
-		if (response.status >= 500) {
-			throw createApiError("server_error", "Server error. Please try again later.", response.status);
-		}
-		if (!response.ok) {
-			throw createApiError("network", `HTTP error ${response.status}`, response.status);
-		}
+			if (response.status === 401) {
+				throw createApiError("auth", "Invalid or expired session.", response.status);
+			}
+			if (response.status === 403) {
+				throw createApiError("auth", "Access denied. Please check your permissions.", response.status);
+			}
+			if (response.status === 429) {
+				throw createApiError("rate_limit", "Too many requests. Please wait a moment and try again.", response.status);
+			}
+			if (response.status >= 500) {
+				throw createApiError("server_error", "Server error. Please try again later.", response.status);
+			}
+			if (!response.ok) {
+				throw createApiError("network", `HTTP error ${response.status}`, response.status);
+			}
 
-		console.log(`Feedback fetch completed in ${Date.now() - fetchStart}ms, status: ${response.status}`);
-		const data: FeedbackResponse = await response.json();
+			console.log(`Feedback fetch completed in ${Date.now() - fetchStart}ms, status: ${response.status}`);
+			const data: FeedbackResponse = await response.json();
 
-		// cache the results
-		feedbackCache.set(cacheKey, {
-			data,
-			timestamp: Date.now(),
-		});
+			// cache the results
+			feedbackCache.set(cacheKey, {
+				data,
+				timestamp: Date.now(),
+			});
 
-		return data;
-	} catch (error) {
-		if (isAirtableApiError(error)) {
-			throw error;
+			return data;
+		} catch (error) {
+			// if this is the retry attempt, or not a 401 error, throw
+			if (attempt === 1 || !isAirtableApiError(error) || error.type !== "auth") {
+				if (isAirtableApiError(error)) {
+					throw error;
+				}
+				if (error instanceof Error && error.message === "Request timed out") {
+					throw createApiError("timeout", "Request timed out. Please try again.");
+				}
+				if (error instanceof TypeError) {
+					throw createApiError("network", "Unable to connect to API. Check your network connection.");
+				}
+				throw createApiError("network", "An unexpected error occurred");
+			}
 		}
-		if (error instanceof Error && error.message === "Request timed out") {
-			throw createApiError("timeout", "Request timed out. Please try again.");
-		}
-		if (error instanceof TypeError) {
-			throw createApiError("network", "Unable to connect to API. Check your network connection.");
-		}
-		throw createApiError("network", "An unexpected error occurred");
 	}
+
+	// should never reach here, but TypeScript needs this
+	throw createApiError("network", "An unexpected error occurred");
 }
 
 /**

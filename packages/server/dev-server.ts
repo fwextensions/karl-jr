@@ -108,7 +108,7 @@ const server = createServer(async (req, res) => {
 	if (origin) {
 		res.setHeader("Access-Control-Allow-Origin", origin);
 		res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-		res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Wagtail-Session, X-SF-Gov-Extension");
+		res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Wagtail-Session, X-SF-Gov-Extension");
 	}
 
 	if (req.method === "OPTIONS") {
@@ -119,6 +119,7 @@ const server = createServer(async (req, res) => {
 
 	// route to handlers
 	const routes: Record<string, string> = {
+		"/api/auth/token": "auth/token",
 		"/api/feedback": "feedback",
 		"/api/link-check": "link-check",
 		"/api/health": "health",

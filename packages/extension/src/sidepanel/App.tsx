@@ -9,7 +9,7 @@ import { FormConfirmationCard } from "./components/FormConfirmationCard";
 import { PreviewBanner } from "./components/PreviewBanner";
 import { FeedbackCard } from "./components/FeedbackCard";
 import { LinksCard } from "./components/LinksCard";
-import { initAnalytics, trackEvent, trackError, identifyUser } from "@/lib/analytics";
+import { initAnalytics, trackEvent, trackError } from "@/lib/analytics";
 import {
 	extractCategorizedLinks,
 	type CategorizedLinks
@@ -44,15 +44,6 @@ export default function App()
 	useEffect(() => {
 		initAnalytics();
 	}, []);
-
-	// identify user when side panel loads (after we've checked authentication)
-	useEffect(() => {
-		if (!isLoading && isOnSfGov) {
-			// call identifyUser to check if user is logged in and create person profile
-			// this runs after page data loads, so we know authentication state
-			identifyUser();
-		}
-	}, [isLoading, isOnSfGov]);
 
 	// track side panel views - only once per URL when we have final data
 	useEffect(() => {

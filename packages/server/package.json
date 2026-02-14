@@ -7,7 +7,8 @@
 		"dev": "npx --yes tsx --env-file=.env dev-server.ts",
 		"dev:vercel": "vercel dev",
 		"deploy": "vercel --prod",
-		"type-check": "tsc --noEmit"
+		"type-check": "tsc --noEmit",
+		"test": "node --import tsx --test **/*.test.ts"
 	},
 	"dependencies": {
 		"@sf-gov/shared": "*",
@@ -16,6 +17,8 @@
 	},
 	"devDependencies": {
 		"@types/node": "^24.10.1",
+		"fast-check": "^4.5.3",
+		"tsx": "^4.21.0",
 		"typescript": "~5.9.3"
 	}
 }
