@@ -13,13 +13,14 @@ sf-gov-companion/
 ├── packages/
 │   ├── extension/          # Browser extension workspace
 │   │   ├── src/
-│   │   │   ├── api/        # Wagtail API client
-│   │   │   ├── assets/     # Static assets
+│   │   │   ├── api/        # API clients, auth, page data transformer
 │   │   │   ├── background/ # Background service worker
+│   │   │   ├── content/    # Content scripts (DOM extraction, admin preview)
+│   │   │   ├── lib/        # Shared utilities (analytics, console)
 │   │   │   ├── sidepanel/  # Side panel UI (React app)
 │   │   │   │   ├── components/ # React components
 │   │   │   │   └── hooks/  # Custom React hooks
-│   │   │   └── types/      # TypeScript type definitions
+│   │   │   └── test/       # Test setup
 │   │   ├── public/         # Public assets (icons, etc.)
 │   │   ├── dist/           # Build output (generated)
 │   │   ├── release/        # Distribution zip files (generated)
@@ -30,9 +31,10 @@ sf-gov-companion/
 │   │
 │   ├── server/             # Vercel API workspace
 │   │   ├── api/            # Serverless functions
+│   │   │   ├── auth/       # Token exchange endpoint
 │   │   │   ├── feedback.ts # User feedback proxy endpoint
 │   │   │   └── link-check.ts # Server-side link checking (SSE)
-│   │   ├── lib/            # Shared utilities (auth, logging)
+│   │   ├── lib/            # Shared utilities (auth, token, logging)
 │   │   ├── dev-server.ts   # Lightweight local dev server
 │   │   ├── package.json    # API dependencies
 │   │   ├── tsconfig.json   # TypeScript configuration
@@ -43,6 +45,8 @@ sf-gov-companion/
 │       │   ├── types/      # Shared TypeScript types
 │       │   │   ├── wagtail.ts   # Wagtail API types
 │       │   │   ├── airtable.ts  # Airtable API types
+│       │   │   ├── auth.ts      # Token exchange types
+│       │   │   ├── link-check.ts # Link check types
 │       │   │   └── index.ts
 │       │   └── index.ts    # Main export file
 │       ├── package.json    # Shared package config
@@ -211,7 +215,7 @@ The browser extension built with React, Vite, and CRXJS. Contains the side panel
 
 ### API Workspace (`@sf-gov/server`)
 
-Vercel serverless functions for the feedback proxy and link checking endpoints. Handles Wagtail session authentication and Redis caching.
+Vercel serverless functions for token exchange, feedback proxy, and link checking. Uses HMAC-signed tokens for authentication and Redis for feedback caching.
 
 **Key Scripts:**
 - `npm run dev` - Start lightweight Node dev server (recommended)
@@ -219,12 +223,13 @@ Vercel serverless functions for the feedback proxy and link checking endpoints. 
 - `npm run deploy` - Deploy to Vercel production
 
 **API Endpoints:**
+- `/api/auth/token` - Exchanges Wagtail session for a short-lived API token
 - `/api/feedback` - Proxies user feedback data from Airtable
 - `/api/link-check` - Server-side link validation with SSE streaming
 
 **Dependencies:**
 - `@vercel/node` for serverless function runtime
-- `@upstash/redis` for session caching
+- `@upstash/redis` for feedback data caching
 - `tsx` for local TypeScript execution
 - `@sf-gov/shared` for shared types
 
@@ -235,7 +240,8 @@ Common TypeScript types and interfaces used by both extension and API workspaces
 **Exports:**
 - Wagtail API types
 - Airtable API types
-- Common utility types
+- Token exchange types (`TokenResponse`, `TokenErrorResponse`)
+- Link check types
 
 ## TypeScript Configuration
 
@@ -265,6 +271,24 @@ Each workspace extends the root `tsconfig.json` for consistent configuration.
 ### Shared
 - **TypeScript 5.9**: Type definitions only
 
+## Authentication
+
+The extension uses a token exchange system for API authentication:
+
+1. Extension reads the Wagtail `sessionid` cookie via `chrome.cookies`
+2. Extension sends the session ID to `POST /api/auth/token`
+3. Server validates the session against Wagtail and returns an HMAC-signed token (15 min TTL)
+4. Extension caches the token (in-memory + `chrome.storage.session`) and uses it as a `Bearer` token for subsequent API calls
+5. On 401 responses, the token is cleared and re-exchanged automatically
+
+See [Token Authentication Deployment Guide](./docs/token-auth-deployment.md) for migration details.
+
+## Page Data Extraction
+
+Public SF.gov pages use Next.js, which embeds page data in a `__NEXT_DATA__` script tag. The extension extracts this data directly from the DOM via a content script (`next-data-extractor.ts`), transforming it into the `WagtailPage` format. This eliminates network round-trips to the Wagtail API for public pages.
+
+Admin/preview pages continue using direct Wagtail API calls.
+
 ## Extension Identification Headers
 
 All requests to `api.sf.gov` include custom headers for logging and tracking:
@@ -275,9 +299,9 @@ X-SF-Gov-Extension: companion
 ```
 
 These headers are sent in:
-- **Extension → api.sf.gov**: Direct Wagtail API calls for page data
-- **Proxy → api.sf.gov**: Session validation requests
-- **Extension → Proxy**: Airtable feedback requests
+- **Extension → api.sf.gov**: Direct Wagtail API calls (admin pages only)
+- **Server → api.sf.gov**: Session validation during token exchange
+- **Extension → Server**: Feedback and link-check requests (via Bearer token)
 
 Server administrators can filter logs using these headers to identify extension traffic.
 

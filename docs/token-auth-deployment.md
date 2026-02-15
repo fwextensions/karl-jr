@@ -12,6 +12,68 @@ The token exchange authentication system replaces the current session-based flow
 - Reduced blast radius: leaked tokens grant read-only companion API access for ≤15 minutes (vs full Wagtail admin access)
 - ~90% reduction in Wagtail API calls
 
+### Token Exchange Auth Flow
+
+```mermaid
+sequenceDiagram
+    participant Ext as Extension<br/>(Side Panel)
+    participant Auth as Auth Module<br/>(auth.ts)
+    participant Cache as Token Cache<br/>(memory + storage.session)
+    participant Server as Vercel API<br/>(/api/auth/token)
+    participant Wagtail as Wagtail CMS<br/>(api.sf.gov)
+    participant API as API Endpoint<br/>(feedback, link-check)
+
+    Note over Ext,API: Token Acquisition (on first API call or token expiry)
+
+    Ext->>Auth: getAuthToken()
+    Auth->>Cache: check in-memory cache
+    alt token valid (>60s remaining)
+        Cache-->>Auth: cached token
+        Auth-->>Ext: token
+    else expired or missing
+        Auth->>Cache: check chrome.storage.session
+        alt token valid (>60s remaining)
+            Cache-->>Auth: stored token
+            Auth-->>Ext: token
+        else expired or missing
+            Auth->>Auth: getWagtailSessionId()<br/>via chrome.cookies
+            Auth->>Server: POST /api/auth/token<br/>X-Wagtail-Session: {sessionId}
+            Server->>Wagtail: GET /api/v2/pages<br/>Cookie: sessionid={sessionId}
+            Wagtail-->>Server: 200 OK (session valid)
+            Server->>Server: createToken()<br/>HMAC-SHA256 sign<br/>SHA-256(sessionId) as fingerprint
+            Server-->>Auth: { token, expiresAt }
+            Auth->>Cache: store in memory + storage.session
+            Auth-->>Ext: token
+        end
+    end
+
+    Note over Ext,API: Authenticated API Request
+
+    Ext->>API: GET/POST with<br/>Authorization: Bearer {token}
+    API->>API: verifyToken()<br/>check HMAC + expiry
+    alt token valid
+        API-->>Ext: 200 response data
+    else token invalid/expired
+        API-->>Ext: 401 Unauthorized
+        Ext->>Auth: clearAuthToken()
+        Auth->>Cache: clear memory + storage
+        Ext->>Auth: getAuthToken() (retry)
+        Note over Auth,Server: re-runs exchange flow above
+        Auth-->>Ext: new token
+        Ext->>API: retry with new token
+        API-->>Ext: 200 response data
+    end
+```
+
+### Key Design Points
+
+- **Token TTL**: 15 minutes (configurable via `TOKEN_TTL_SECONDS`)
+- **Proactive refresh**: tokens are refreshed when <60s remaining, avoiding mid-request expiry
+- **Two-tier cache**: in-memory (fast sync path) + `chrome.storage.session` (survives service worker restarts)
+- **Session fingerprint**: token payload contains `SHA-256(sessionId)`, not the raw session ID
+- **Retry-on-401**: API clients automatically clear the token and retry once on 401 responses
+- **Legacy fallback**: server endpoints still accept `X-Wagtail-Session` directly (to be removed in Phase 3)
+
 ## Prerequisites
 
 Before deploying, ensure you have:

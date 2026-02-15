@@ -1,7 +1,6 @@
 // content script for extracting page data from __NEXT_DATA__ script tag
 // injected into SF.gov pages to extract page data from the DOM
 
-import "@/lib/console.ts";
 import { transformNextDataToWagtailPage } from "@/api/page-data-transformer";
 import type { WagtailPage } from "@sf-gov/shared";
 
@@ -85,7 +84,7 @@ function performExtraction(): void {
 		sendExtractionSuccess(wagtailPage);
 	} catch (transformError) {
 		const errorMessage = `Transformation failed: ${transformError instanceof Error ? transformError.message : String(transformError)}`;
-		console.error("[next-data-extractor]", errorMessage);
+		console.warn("[next-data-extractor]", errorMessage);
 		sendExtractionFailed(errorMessage);
 	}
 }
@@ -104,7 +103,7 @@ async function sendExtractionSuccess(data: WagtailPage): Promise<void> {
 		await chrome.runtime.sendMessage(message);
 		console.log("[next-data-extractor] PAGE_DATA_EXTRACTED message sent");
 	} catch (error) {
-		console.error("[next-data-extractor] failed to send message:", error);
+		console.warn("[next-data-extractor] failed to send message:", error);
 	}
 }
 
@@ -122,7 +121,7 @@ async function sendExtractionFailed(reason: string): Promise<void> {
 		await chrome.runtime.sendMessage(message);
 		console.log("[next-data-extractor] PAGE_DATA_EXTRACTION_FAILED message sent");
 	} catch (error) {
-		console.error("[next-data-extractor] failed to send message:", error);
+		console.warn("[next-data-extractor] failed to send message:", error);
 	}
 }
 

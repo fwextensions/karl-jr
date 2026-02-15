@@ -15,11 +15,6 @@ import { trackEvent } from "@/lib/analytics";
 const CACHE_TTL = 5 * 60 * 1000;
 
 /**
- * Debounce delay in milliseconds
- */
-const DEBOUNCE_DELAY = 300;
-
-/**
  * Interface for tracking the current tab state
  */
 interface TabState {
@@ -356,26 +351,6 @@ export function useSfGovPage(): UseSfGovPageReturn {
 			setIsLoading(false);
 		}
 	}, [previewUrl]);
-
-	/**
-	 * Debounced function to fetch page data
-	 * @param slug - The page slug to fetch data for
-	 * @param url - The current URL to help determine the correct locale
-	 * @param previewMode - Whether to use preview mode
-	 * @param timestamp - Preview timestamp
-	 */
-	const debouncedFetchPageData = useCallback((slug: string, url: string, previewMode: boolean = false, timestamp: number = 0) => {
-		// Clear existing timer if present
-		if (debounceTimerRef.current !== null) {
-			clearTimeout(debounceTimerRef.current);
-		}
-		
-		// Set new timer
-		debounceTimerRef.current = window.setTimeout(() => {
-			debounceTimerRef.current = null;
-			fetchPageData(slug, url, previewMode, timestamp);
-		}, DEBOUNCE_DELAY);
-	}, [fetchPageData]);
 
 	/**
 	 * Requests page data from the content script on the active tab

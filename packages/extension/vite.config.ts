@@ -8,8 +8,8 @@ import manifest from './manifest.config.js'
 import { version } from './package.json'
 
 export default defineConfig(({ mode }) => ({
-	define: {
-		__DEV__: mode === 'development',
+	esbuild: {
+		pure: mode === 'production' ? ['console.log', 'console.warn'] : [],
 	},
 	resolve: {
 		alias: {

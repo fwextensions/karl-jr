@@ -3,7 +3,7 @@
 import { vi } from 'vitest';
 
 // mock Chrome extension API
-global.chrome = {
+globalThis.chrome = {
 	runtime: {
 		onMessage: {
 			addListener: vi.fn(),

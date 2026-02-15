@@ -39,7 +39,6 @@ UPSTASH_REDIS_REST_TOKEN=your_upstash_redis_token
 Optional configuration:
 ```bash
 TOKEN_TTL_SECONDS=900  # token lifetime in seconds (default: 900 = 15 minutes)
-SESSION_CACHE_TTL=300  # cache TTL in seconds (default: 300)
 WAGTAIL_VALIDATION_TIMEOUT=5000  # validation timeout in milliseconds (default: 5000)
 ```
 
@@ -165,21 +164,20 @@ Set the following environment variables in your Vercel project settings:
 
 **Optional (with defaults):**
 - `TOKEN_TTL_SECONDS` (default: 900 seconds = 15 minutes)
-- `SESSION_CACHE_TTL` (default: 300 seconds)
 - `WAGTAIL_VALIDATION_TIMEOUT` (default: 5000 milliseconds)
 
 ## Architecture
 
-- **Token Exchange**: Validates Wagtail sessions once and issues short-lived HMAC-signed tokens
-- **Token Validation**: Verifies tokens locally using cryptographic signatures (no external calls)
+- **Token Exchange** (`/api/auth/token`): Validates Wagtail sessions once and issues short-lived HMAC-signed tokens
+- **Token Validation**: Verifies tokens locally using HMAC-SHA256 signatures (no external calls needed)
 - **Session Validation**: Validates Wagtail admin sessions by making requests to the Wagtail API (only during token exchange)
-- **Caching**: Uses Upstash Redis to cache feedback data
-- **Rate Limiting**: Limits requests to 10 per 10 seconds per session using Upstash Redis
-- **Security**: Validates origin headers, tokens are scoped to companion API only
+- **Shared Auth** (`lib/auth.ts`): Centralized authentication helpers — `authenticateRequest()` handles token-or-session auth, `handleCors()` handles CORS/preflight/origin validation
+- **Caching**: Uses Upstash Redis to cache feedback data (2 hour TTL)
+- **Security**: Validates origin headers (extension and localhost only), tokens contain a SHA-256 session fingerprint (not the raw session ID)
 
 ## Upstash Redis Setup
 
-The API uses Upstash Redis for session caching and rate limiting. To set up Upstash Redis:
+The API uses Upstash Redis for caching feedback data from Airtable. To set up Upstash Redis:
 
 ### Production (Vercel)
 
