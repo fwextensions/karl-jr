@@ -331,16 +331,13 @@ const ReadabilityScoreResults = ({ result }: { result: ReadabilityScore | null }
 		
 		// copy to clipboard and show notification in the side panel
 		navigator.clipboard.writeText(text).then(() => {
-			// open Hemingway in a new tab
-			window.open("https://hemingwayapp.com/", "_blank");
-			
-			// show notification in our side panel using React state
+			// show notification first
 			setShowCopyNotification(true);
 			
-			// hide notification after 10 seconds
+			// open Hemingway after a brief delay so user sees the notification
 			setTimeout(() => {
-				setShowCopyNotification(false);
-			}, 10000);
+				window.open("https://hemingwayapp.com/", "_blank");
+			}, 500);
 		}).catch(() => {
 			// fallback: open Hemingway with alert instructions
 			window.open("https://hemingwayapp.com/", "_blank");
@@ -348,18 +345,44 @@ const ReadabilityScoreResults = ({ result }: { result: ReadabilityScore | null }
 		});
 	};
 	
+	const handleDismissNotification = () => {
+		setShowCopyNotification(false);
+	};
+	
 	return (
 		<div className="space-y-3">
 			{showCopyNotification && (
-				<div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-					<div className="font-semibold text-blue-900 mb-2">✓ Text copied to clipboard!</div>
-					<div className="text-sm text-blue-800 space-y-1">
-						<div>Hemingway App opened in a new tab. To compare scores:</div>
-						<ol className="list-decimal list-inside space-y-1 mt-2">
-							<li>Clear any existing text in Hemingway App</li>
-							<li>Paste with Ctrl+V (or Cmd+V on Mac)</li>
-							<li>Compare the readability scores</li>
-						</ol>
+				<div className="p-4 bg-blue-50 border-2 border-blue-400 rounded-lg relative">
+					<button
+						onClick={handleDismissNotification}
+						className="absolute top-2 right-2 text-blue-600 hover:text-blue-800 font-bold text-lg leading-none"
+						aria-label="Dismiss notification"
+					>
+						×
+					</button>
+					<div className="font-semibold text-blue-900 mb-3 text-base">✓ Text copied to clipboard!</div>
+					<div className="text-sm text-blue-900 space-y-2">
+						<div className="font-medium">Hemingway App is opening in a new tab.</div>
+						<div className="bg-blue-100 p-3 rounded border border-blue-300">
+							<div className="font-semibold mb-2">Important: Follow these steps</div>
+							<ol className="list-decimal list-inside space-y-2">
+								<li>
+									<span className="font-semibold">Clear any existing text</span> in Hemingway App
+									<div className="text-xs text-blue-700 ml-5 mt-1">
+										(Hemingway may show text from your last session)
+									</div>
+								</li>
+								<li>
+									<span className="font-semibold">Paste</span> with Ctrl+V (or Cmd+V on Mac)
+								</li>
+								<li>
+									<span className="font-semibold">Compare</span> the readability scores
+								</li>
+							</ol>
+						</div>
+						<div className="text-xs text-blue-700 italic">
+							The text from this SF.gov page is already on your clipboard, ready to paste.
+						</div>
 					</div>
 				</div>
 			)}
