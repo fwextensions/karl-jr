@@ -437,13 +437,16 @@ const ReadabilityScoreResults = ({ result }: { result: ReadabilityScore | null }
 				</div>
 				
 				{result.extractedText && (
-					<div className="pt-2 border-t border-gray-200">
+					<div className="pt-2 border-t border-gray-200 space-y-2">
 						<Button
 							onClick={handleCompareWithHemingway}
 							className="text-xs px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white"
 						>
-							Compare with Hemingway App
+							Get help in Hemingway App
 						</Button>
+						<div className="text-xs text-gray-600">
+							Hemingway will suggest more ways to make your page easier to read
+						</div>
 					</div>
 				)}
 			</div>
