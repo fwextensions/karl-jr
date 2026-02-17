@@ -331,18 +331,16 @@ const ReadabilityScoreResults = ({ result }: { result: ReadabilityScore | null }
 		
 		// copy to clipboard and show notification in the side panel
 		navigator.clipboard.writeText(text).then(() => {
-			// show notification first
+			// show notification with instructions
 			setShowCopyNotification(true);
-			
-			// open Hemingway after a brief delay so user sees the notification
-			setTimeout(() => {
-				window.open("https://hemingwayapp.com/", "_blank");
-			}, 500);
 		}).catch(() => {
-			// fallback: open Hemingway with alert instructions
-			window.open("https://hemingwayapp.com/", "_blank");
-			alert("Please manually copy the page text and paste it into Hemingway App for comparison.\n\n1. Clear any existing text in Hemingway\n2. Copy text from this page\n3. Paste into Hemingway to compare scores");
+			// fallback: show alert with instructions
+			alert("Failed to copy text to clipboard. Please manually copy the page text and paste it into Hemingway App for comparison.\n\n1. Clear any existing text in Hemingway\n2. Copy text from this page\n3. Paste into Hemingway to compare scores");
 		});
+	};
+	
+	const handleOpenHemingway = () => {
+		window.open("https://hemingwayapp.com/", "_blank");
 	};
 	
 	const handleDismissNotification = () => {
@@ -362,9 +360,8 @@ const ReadabilityScoreResults = ({ result }: { result: ReadabilityScore | null }
 					</button>
 					<div className="font-semibold text-blue-900 mb-3 text-base">✓ Text copied to clipboard!</div>
 					<div className="text-sm text-blue-900 space-y-2">
-						<div className="font-medium">Hemingway App is opening in a new tab.</div>
 						<div className="bg-blue-100 p-3 rounded border border-blue-300">
-							<div className="font-semibold mb-2">Important: Follow these steps</div>
+							<div className="font-semibold mb-2">Follow these steps in Hemingway App:</div>
 							<ol className="list-decimal list-inside space-y-2">
 								<li>
 									<span className="font-semibold">Clear any existing text</span> in Hemingway App
@@ -382,6 +379,14 @@ const ReadabilityScoreResults = ({ result }: { result: ReadabilityScore | null }
 						</div>
 						<div className="text-xs text-blue-700 italic">
 							The text from this SF.gov page is already on your clipboard, ready to paste.
+						</div>
+						<div className="pt-2">
+							<button
+								onClick={handleOpenHemingway}
+								className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm"
+							>
+								Open Hemingway App
+							</button>
 						</div>
 					</div>
 				</div>
@@ -558,15 +563,14 @@ export function A11yChecker({
 	const [videoAccessibilityResults, setVideoAccessibilityResults] = useState<VideoAccessibilityResults | null>(null);
 	const [readabilityScore, setReadabilityScore] = useState<ReadabilityScore | null>(null);
 
-	// clear results when page URL changes
+	// clear results when page URL changes, but keep readability score and notification
 	useEffect(() => {
 		setHeadingIssues([]);
 		setImageAltTextResults([]);
 		setLinkAccessibilityResults({ rawUrls: [], vagueLinks: [], vagueButtons: [] });
 		setTableAccessibilityResults(null);
 		setVideoAccessibilityResults(null);
-		setReadabilityScore(null);
-		setHasRun(false);
+		// don't clear readabilityScore or hasRun so notification persists
 		setError(null);
 	}, [pageUrl]);
 
