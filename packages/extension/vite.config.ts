@@ -3,7 +3,6 @@ import { crx } from '@crxjs/vite-plugin'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import zip from 'vite-plugin-zip-pack'
-import tailwindcss from '@tailwindcss/vite'
 import manifest from './manifest.config.js'
 import { version } from './package.json'
 
@@ -18,7 +17,6 @@ export default defineConfig(({ mode }) => ({
 	},
 	plugins: [
 		react(),
-		tailwindcss(),
 		crx({ manifest }),
 		zip({ outDir: 'release', outFileName: `karl-jr-${version}.zip` }),
 	],
