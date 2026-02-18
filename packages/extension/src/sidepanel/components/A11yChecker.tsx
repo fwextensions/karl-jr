@@ -1,13 +1,14 @@
 import { useState, useEffect } from "react";
 import { Button } from "./Button";
-import { 
-	checkHeadingNesting, 
-	checkImageAltText, 
+import {
+	checkHeadingNesting,
+	checkImageAltText,
 	checkLinkAccessibility,
 	checkTableAccessibility,
 	checkVideoAccessibility,
 	calculateReadabilityScore,
-	type HeadingNestingIssue, 
+	extractPageText,
+	type HeadingNestingIssue,
 	type ImageAltTextInfo,
 	type LinkAccessibilityResults,
 	type TableAccessibilityResults,
@@ -15,6 +16,25 @@ import {
 	type ReadabilityScore,
 } from "@/lib/a11y-check";
 import type { MediaAsset } from "@sf-gov/shared";
+
+// ─── helpers ────────────────────────────────────────────────────────────
+
+/** run a function in the active tab and return its result */
+async function executeInTab<T>(tabId: number, func: () => T): Promise<T | undefined> {
+	const [result] = await chrome.scripting.executeScript({
+		target: { tabId },
+		func,
+	});
+	return result?.result as T | undefined;
+}
+
+const emptyLinkResults: LinkAccessibilityResults = {
+	rawUrls: [],
+	vagueLinks: [],
+	vagueButtons: [],
+};
+
+// ─── result sub-components ──────────────────────────────────────────────
 
 const SpinnerIcon = () => (
 	<svg
@@ -39,13 +59,15 @@ const SpinnerIcon = () => (
 	</svg>
 );
 
+const PassMessage = ({ children }: { children: string }) => (
+	<div className="p-3 bg-green-50 text-green-700 text-sm rounded border border-green-100">
+		{children}
+	</div>
+);
+
 const HeadingNestingResults = ({ issues }: { issues: HeadingNestingIssue[] }) => {
 	if (issues.length === 0) {
-		return (
-			<div className="p-3 bg-green-50 text-green-700 text-sm rounded border border-green-100">
-				All headings are properly nested!
-			</div>
-		);
+		return <PassMessage>All headings are properly nested!</PassMessage>;
 	}
 
 	return (
@@ -81,383 +103,6 @@ const HeadingNestingResults = ({ issues }: { issues: HeadingNestingIssue[] }) =>
 	);
 };
 
-const LinkAccessibilityResultsComponent = ({ results }: { results: LinkAccessibilityResults }) => {
-	const totalIssues = results.rawUrls.length + results.vagueLinks.length + results.vagueButtons.length;
-	
-	if (totalIssues === 0) {
-		return (
-			<div className="p-3 bg-green-50 text-green-700 text-sm rounded border border-green-100">
-				All links and buttons are accessible!
-			</div>
-		);
-	}
-	
-	return (
-		<div className="space-y-4">
-			<div className="text-sm text-purple-600 font-semibold">
-				Inaccessible links and buttons found ({totalIssues})
-			</div>
-			
-			{results.rawUrls.length > 0 && (
-				<div className="space-y-2">
-					<h4 className="text-sm font-semibold text-gray-700">
-						URL pasted into text ({results.rawUrls.length})
-					</h4>
-					<div className="p-3 bg-purple-50 rounded border border-purple-100">
-						<ul className="space-y-2 text-sm text-gray-700">
-							{results.rawUrls.map((issue, index) => (
-								<li key={index} className="break-all">
-									<span className="font-mono text-xs bg-purple-100 px-1 py-0.5 rounded">
-										{issue.text}
-									</span>
-								</li>
-							))}
-						</ul>
-					</div>
-				</div>
-			)}
-			
-			{results.vagueLinks.length > 0 && (
-				<div className="space-y-2">
-					<h4 className="text-sm font-semibold text-gray-700">
-						Vague link text ({results.vagueLinks.length})
-					</h4>
-					<div className="p-3 bg-purple-50 rounded border border-purple-100">
-						<ul className="space-y-2 text-sm text-gray-700">
-							{results.vagueLinks.map((issue, index) => (
-								<li key={index}>
-									<span className="font-mono text-xs bg-purple-100 px-1 py-0.5 rounded">
-										"{issue.text}"
-									</span>
-								</li>
-							))}
-						</ul>
-					</div>
-				</div>
-			)}
-			
-			{results.vagueButtons.length > 0 && (
-				<div className="space-y-2">
-					<h4 className="text-sm font-semibold text-gray-700">
-						Vague button text ({results.vagueButtons.length})
-					</h4>
-					<div className="p-3 bg-purple-50 rounded border border-purple-100">
-						<ul className="space-y-2 text-sm text-gray-700">
-							{results.vagueButtons.map((issue, index) => (
-								<li key={index}>
-									<span className="font-mono text-xs bg-purple-100 px-1 py-0.5 rounded">
-										"{issue.text}"
-									</span>
-								</li>
-							))}
-						</ul>
-					</div>
-				</div>
-			)}
-			
-			<div className="text-xs text-gray-600 italic">
-				Issues are highlighted in purple on the page.
-			</div>
-		</div>
-	);
-};
-
-const TableAccessibilityResultsComponent = ({ results }: { results: TableAccessibilityResults | null }) => {
-	if (!results) {
-		return null;
-	}
-	
-	if (results.totalTables === 0) {
-		return (
-			<div className="p-3 bg-gray-50 text-gray-600 text-sm rounded border border-gray-100">
-				There are no tables on this page.
-			</div>
-		);
-	}
-	
-	if (results.issues.length === 0) {
-		return (
-			<div className="p-3 bg-green-50 text-green-700 text-sm rounded border border-green-100">
-				All tables are accessible!
-			</div>
-		);
-	}
-	
-	return (
-		<div className="space-y-3">
-			<div className="p-3 bg-red-50 text-red-700 text-sm rounded border border-red-100">
-				Found {results.issues.length} table{results.issues.length > 1 ? 's' : ''} with accessibility issues
-			</div>
-			
-			{results.issues.map((issue, index) => (
-				<div key={index} className="space-y-2">
-					<h4 className="text-sm font-semibold text-gray-700">
-						Table {issue.tableIndex}
-					</h4>
-					<div className="p-3 bg-red-50 rounded border border-red-100">
-						<ul className="space-y-1 text-sm text-gray-700">
-							{issue.missingCaption && (
-								<li className="flex items-start gap-2">
-									<span className="text-red-600 mt-0.5">✗</span>
-									<span>Missing caption - add a title using the "Caption" field in the table editor</span>
-								</li>
-							)}
-							{issue.missingHeaders && (
-								<li className="flex items-start gap-2">
-									<span className="text-red-600 mt-0.5">✗</span>
-									<span>Missing header row or column - mark the first row or column as headers in the table editor</span>
-								</li>
-							)}
-						</ul>
-					</div>
-				</div>
-			))}
-			
-			<div className="text-xs text-gray-600 italic">
-				Tables with issues are highlighted in red on the page.
-			</div>
-		</div>
-	);
-};
-
-const VideoAccessibilityResultsComponent = ({ results }: { results: VideoAccessibilityResults | null }) => {
-	if (!results) {
-		return null;
-	}
-	
-	if (results.totalVideos === 0) {
-		return (
-			<div className="p-3 bg-gray-50 text-gray-600 text-sm rounded border border-gray-100">
-				There are no videos on this page.
-			</div>
-		);
-	}
-	
-	if (results.issues.length === 0) {
-		return (
-			<div className="p-3 bg-green-50 text-green-700 text-sm rounded border border-green-100">
-				All videos are accessible!
-			</div>
-		);
-	}
-	
-	return (
-		<div className="space-y-3">
-			<div className="p-3 bg-red-50 text-red-700 text-sm rounded border border-red-100">
-				Found {results.issues.length} video{results.issues.length > 1 ? 's' : ''} with accessibility issues
-			</div>
-			
-			{results.issues.map((issue, index) => (
-				<div key={index} className="space-y-2">
-					<h4 className="text-sm font-semibold text-gray-700">
-						Video {issue.videoIndex}
-					</h4>
-					<div className="p-3 bg-red-50 rounded border border-red-100">
-						<ul className="space-y-1 text-sm text-gray-700">
-							{issue.missingCaptions && (
-								<li className="flex items-start gap-2">
-									<span className="text-red-600 mt-0.5">✗</span>
-									<span>Missing captions - add captions or subtitles to the video</span>
-								</li>
-							)}
-							{issue.missingTranscript && (
-								<li className="flex items-start gap-2">
-									<span className="text-red-600 mt-0.5">✗</span>
-									<span>Missing transcript - add a text transcript near the video</span>
-								</li>
-							)}
-						</ul>
-						{issue.videoSrc && (
-							<div className="mt-2 text-xs text-gray-500 break-all">
-								Source: {issue.videoSrc}
-							</div>
-						)}
-					</div>
-				</div>
-			))}
-			
-			<div className="text-xs text-gray-600 italic">
-				Videos with issues are highlighted in red on the page.
-			</div>
-		</div>
-	);
-};
-
-const ReadabilityScoreResults = ({ result }: { result: ReadabilityScore | null }) => {
-	const [showCopyNotification, setShowCopyNotification] = useState(false);
-	
-	if (!result) {
-		return (
-			<div className="p-3 bg-gray-50 text-gray-600 text-sm rounded border border-gray-100">
-				Unable to calculate readability score.
-			</div>
-		);
-	}
-	
-	if (result.wordCount === 0) {
-		return (
-			<div className="p-3 bg-gray-50 text-gray-600 text-sm rounded border border-gray-100">
-				Not enough text content to analyze.
-			</div>
-		);
-	}
-	
-	// determine color based on score
-	let scoreColor = "text-green-700";
-	let bgColor = "bg-green-50";
-	let borderColor = "border-green-100";
-	
-	if (result.score > 12) {
-		scoreColor = "text-red-700";
-		bgColor = "bg-red-50";
-		borderColor = "border-red-100";
-	} else if (result.score > 10) {
-		scoreColor = "text-orange-700";
-		bgColor = "bg-orange-50";
-		borderColor = "border-orange-100";
-	} else if (result.score > 8) {
-		scoreColor = "text-amber-700";
-		bgColor = "bg-amber-50";
-		borderColor = "border-amber-100";
-	}
-	
-	const handleCompareWithHemingway = () => {
-		if (!result.extractedText) {
-			console.error("No extracted text available for comparison");
-			return;
-		}
-		
-		const text = result.extractedText;
-		
-		// copy to clipboard and show notification in the side panel
-		navigator.clipboard.writeText(text).then(() => {
-			// show notification with instructions
-			setShowCopyNotification(true);
-		}).catch(() => {
-			// fallback: show alert with instructions
-			alert("Failed to copy text to clipboard. Please manually copy the page text and paste it into Hemingway App for comparison.\n\n1. Clear any existing text in Hemingway\n2. Copy text from this page\n3. Paste into Hemingway to compare scores");
-		});
-	};
-	
-	const handleOpenHemingway = () => {
-		window.open("https://hemingwayapp.com/", "_blank");
-	};
-	
-	const handleDismissNotification = () => {
-		setShowCopyNotification(false);
-	};
-	
-	return (
-		<div className="space-y-3">
-			{showCopyNotification && (
-				<div className="p-4 bg-blue-50 border-2 border-blue-400 rounded-lg relative">
-					<button
-						onClick={handleDismissNotification}
-						className="absolute top-2 right-2 text-blue-600 hover:text-blue-800 font-bold text-lg leading-none"
-						aria-label="Dismiss notification"
-					>
-						×
-					</button>
-					<div className="font-semibold text-blue-900 mb-3 text-base">✓ Text copied to clipboard!</div>
-					<div className="text-sm text-blue-900 space-y-2">
-						<div className="bg-blue-100 p-3 rounded border border-blue-300">
-							<div className="font-semibold mb-2">Follow these steps in Hemingway App:</div>
-							<ol className="list-decimal list-inside space-y-2">
-								<li>
-									<span className="font-semibold">Clear any existing text</span> in Hemingway App
-									<div className="text-xs text-blue-700 ml-5 mt-1">
-										(Hemingway may show text from your last session)
-									</div>
-								</li>
-								<li>
-									<span className="font-semibold">Paste</span> with Ctrl+V (or Cmd+V on Mac)
-								</li>
-								<li>
-									<span className="font-semibold">Compare</span> the readability scores
-								</li>
-							</ol>
-						</div>
-						<div className="text-xs text-blue-700 italic">
-							The text from this SF.gov page is already on your clipboard, ready to paste.
-						</div>
-						<div className="pt-2">
-							<button
-								onClick={handleOpenHemingway}
-								className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm"
-							>
-								Open Hemingway App
-							</button>
-						</div>
-					</div>
-				</div>
-			)}
-			
-			<div className={`p-4 ${bgColor} rounded border ${borderColor}`}>
-				<div className="flex items-baseline gap-3 mb-2">
-					<div className={`text-3xl font-bold ${scoreColor}`}>
-						{result.score}
-					</div>
-					<div className="text-sm font-semibold text-gray-700">
-						{result.gradeLevel}
-					</div>
-				</div>
-				<div className="text-sm text-gray-700 mb-2">
-					{result.interpretation}
-				</div>
-				
-				{result.factors && result.factors.length > 0 && (
-					<div className="mb-3">
-						<ul className="text-sm text-gray-600 space-y-1">
-							{result.factors.map((factor, index) => (
-								<li key={index} className="flex items-start gap-2">
-									<span className="text-gray-400 mt-1">•</span>
-									<span>{factor}</span>
-								</li>
-							))}
-						</ul>
-					</div>
-				)}
-				
-				{result.structureIssues && result.structureIssues.length > 0 && (
-					<div className="mb-3 pt-3 border-t border-gray-200">
-						<div className="text-sm font-semibold text-gray-700 mb-2">Content structure</div>
-						<ul className="text-sm text-gray-600 space-y-1">
-							{result.structureIssues.map((issue, index) => (
-								<li key={index} className="flex items-start gap-2">
-									<span className="text-gray-400 mt-1">•</span>
-									<span>{issue}</span>
-								</li>
-							))}
-						</ul>
-					</div>
-				)}
-				
-				<div className={`text-sm font-medium ${scoreColor} mb-3`}>
-					{result.recommendation}
-				</div>
-				
-				{result.extractedText && (
-					<div className="pt-2 border-t border-gray-200 space-y-2">
-						<Button
-							onClick={handleCompareWithHemingway}
-							className="text-xs px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white"
-						>
-							Get help in Hemingway App
-						</Button>
-						<div className="text-xs text-gray-600">
-							Hemingway will suggest more ways to make your page easier to read
-						</div>
-					</div>
-				)}
-			</div>
-			
-			<div className="text-xs text-gray-600 italic">
-				Score calculated using adaptive Automated Readability Index, adjusted for sentence complexity. Results will be close to, but may not exactly match, Hemingway App scores. SF.gov aims for 8th grade level or lower for accessibility.
-			</div>
-		</div>
-	);
-};
-
 const ImageAltTextResults = ({ results, apiImages }: { results: ImageAltTextInfo[]; apiImages: MediaAsset[] }) => {
 	if (results.length === 0) {
 		return (
@@ -468,18 +113,14 @@ const ImageAltTextResults = ({ results, apiImages }: { results: ImageAltTextInfo
 	}
 
 	const missingAltText = results.filter(info => !info.hasAltText);
-	
+
 	if (missingAltText.length === 0) {
-		return (
-			<div className="p-3 bg-green-50 text-green-700 text-sm rounded border border-green-100">
-				All images have alt text!
-			</div>
-		);
+		return <PassMessage>All images have alt text!</PassMessage>;
 	}
 
 	// create a set of API image URLs for comparison
 	const apiImageUrls = new Set(apiImages.map(img => img.url));
-	
+
 	// separate images into those in API and those not in API
 	const imagesInApi = missingAltText.filter(info => apiImageUrls.has(info.url));
 	const imagesNotInApi = missingAltText.filter(info => !apiImageUrls.has(info.url));
@@ -520,6 +161,412 @@ const ImageAltTextResults = ({ results, apiImages }: { results: ImageAltTextInfo
 	);
 };
 
+const LinkAccessibilityResultsComponent = ({ results }: { results: LinkAccessibilityResults }) => {
+	const totalIssues = results.rawUrls.length + results.vagueLinks.length + results.vagueButtons.length;
+
+	if (totalIssues === 0) {
+		return <PassMessage>All links and buttons are accessible!</PassMessage>;
+	}
+
+	return (
+		<div className="space-y-4">
+			<div className="text-sm text-purple-600 font-semibold">
+				Inaccessible links and buttons found ({totalIssues})
+			</div>
+
+			{results.rawUrls.length > 0 && (
+				<div className="space-y-2">
+					<h4 className="text-sm font-semibold text-gray-700">
+						URL pasted into text ({results.rawUrls.length})
+					</h4>
+					<div className="p-3 bg-purple-50 rounded border border-purple-100">
+						<ul className="space-y-2 text-sm text-gray-700">
+							{results.rawUrls.map((issue, index) => (
+								<li key={index} className="break-all">
+									<span className="font-mono text-xs bg-purple-100 px-1 py-0.5 rounded">
+										{issue.text}
+									</span>
+								</li>
+							))}
+						</ul>
+					</div>
+				</div>
+			)}
+
+			{results.vagueLinks.length > 0 && (
+				<div className="space-y-2">
+					<h4 className="text-sm font-semibold text-gray-700">
+						Vague link text ({results.vagueLinks.length})
+					</h4>
+					<div className="p-3 bg-purple-50 rounded border border-purple-100">
+						<ul className="space-y-2 text-sm text-gray-700">
+							{results.vagueLinks.map((issue, index) => (
+								<li key={index}>
+									<span className="font-mono text-xs bg-purple-100 px-1 py-0.5 rounded">
+										"{issue.text}"
+									</span>
+								</li>
+							))}
+						</ul>
+					</div>
+				</div>
+			)}
+
+			{results.vagueButtons.length > 0 && (
+				<div className="space-y-2">
+					<h4 className="text-sm font-semibold text-gray-700">
+						Vague button text ({results.vagueButtons.length})
+					</h4>
+					<div className="p-3 bg-purple-50 rounded border border-purple-100">
+						<ul className="space-y-2 text-sm text-gray-700">
+							{results.vagueButtons.map((issue, index) => (
+								<li key={index}>
+									<span className="font-mono text-xs bg-purple-100 px-1 py-0.5 rounded">
+										"{issue.text}"
+									</span>
+								</li>
+							))}
+						</ul>
+					</div>
+				</div>
+			)}
+
+			<div className="text-xs text-gray-600 italic">
+				Issues are highlighted in purple on the page.
+			</div>
+		</div>
+	);
+};
+
+const TableAccessibilityResultsComponent = ({ results }: { results: TableAccessibilityResults }) => {
+	if (results.issues.length === 0) {
+		return <PassMessage>All tables are accessible!</PassMessage>;
+	}
+
+	return (
+		<div className="space-y-3">
+			<div className="p-3 bg-red-50 text-red-700 text-sm rounded border border-red-100">
+				Found {results.issues.length} table{results.issues.length > 1 ? "s" : ""} with accessibility issues
+			</div>
+
+			{results.issues.map((issue, index) => (
+				<div key={index} className="space-y-2">
+					<h4 className="text-sm font-semibold text-gray-700">
+						Table {issue.tableIndex}
+					</h4>
+					<div className="p-3 bg-red-50 rounded border border-red-100">
+						<ul className="space-y-1 text-sm text-gray-700">
+							{issue.missingCaption && (
+								<li className="flex items-start gap-2">
+									<span className="text-red-600 mt-0.5">✗</span>
+									<span>Missing caption - add a title using the "Caption" field in the table editor</span>
+								</li>
+							)}
+							{issue.missingHeaders && (
+								<li className="flex items-start gap-2">
+									<span className="text-red-600 mt-0.5">✗</span>
+									<span>Missing header row or column - mark the first row or column as headers in the table editor</span>
+								</li>
+							)}
+						</ul>
+					</div>
+				</div>
+			))}
+
+			<div className="text-xs text-gray-600 italic">
+				Tables with issues are highlighted in red on the page.
+			</div>
+		</div>
+	);
+};
+
+const VideoAccessibilityResultsComponent = ({ results }: { results: VideoAccessibilityResults }) => {
+	if (results.issues.length === 0) {
+		return <PassMessage>All videos are accessible!</PassMessage>;
+	}
+
+	return (
+		<div className="space-y-3">
+			<div className="p-3 bg-red-50 text-red-700 text-sm rounded border border-red-100">
+				Found {results.issues.length} video{results.issues.length > 1 ? "s" : ""} with accessibility issues
+			</div>
+
+			{results.issues.map((issue, index) => (
+				<div key={index} className="space-y-2">
+					<h4 className="text-sm font-semibold text-gray-700">
+						Video {issue.videoIndex}
+					</h4>
+					<div className="p-3 bg-red-50 rounded border border-red-100">
+						<ul className="space-y-1 text-sm text-gray-700">
+							{issue.missingCaptions && (
+								<li className="flex items-start gap-2">
+									<span className="text-red-600 mt-0.5">✗</span>
+									<span>Missing captions - add captions or subtitles to the video</span>
+								</li>
+							)}
+							{issue.needsManualCaptionCheck && (
+								<li className="flex items-start gap-2">
+									<span className="text-amber-600 mt-0.5">?</span>
+									<span>Captions could not be detected - verify that captions are enabled in Vimeo</span>
+								</li>
+							)}
+							{issue.missingTranscript && (
+								<li className="flex items-start gap-2">
+									<span className="text-red-600 mt-0.5">✗</span>
+									<span>Missing transcript - add a text transcript near the video</span>
+								</li>
+							)}
+						</ul>
+						{issue.videoSrc && (
+							<div className="mt-2 text-xs text-gray-500 break-all">
+								Source: {issue.videoSrc}
+							</div>
+						)}
+					</div>
+				</div>
+			))}
+
+			<div className="text-xs text-gray-600 italic">
+				Videos with issues are highlighted in red on the page.
+			</div>
+		</div>
+	);
+};
+
+const ReadabilityScoreResults = ({ result, onCopyText }: { result: ReadabilityScore; onCopyText: () => Promise<void> }) => {
+	const [showCopyNotification, setShowCopyNotification] = useState(false);
+
+	if (result.wordCount === 0) {
+		return (
+			<div className="p-3 bg-gray-50 text-gray-600 text-sm rounded border border-gray-100">
+				Not enough text content to analyze.
+			</div>
+		);
+	}
+
+	// determine color based on score
+	let scoreColor = "text-green-700";
+	let bgColor = "bg-green-50";
+	let borderColor = "border-green-100";
+
+	if (result.score > 12) {
+		scoreColor = "text-red-700";
+		bgColor = "bg-red-50";
+		borderColor = "border-red-100";
+	} else if (result.score > 10) {
+		scoreColor = "text-orange-700";
+		bgColor = "bg-orange-50";
+		borderColor = "border-orange-100";
+	} else if (result.score > 8) {
+		scoreColor = "text-amber-700";
+		bgColor = "bg-amber-50";
+		borderColor = "border-amber-100";
+	}
+
+	const handleCompareWithHemingway = async () => {
+		try {
+			await onCopyText();
+			setShowCopyNotification(true);
+		} catch {
+			alert("Failed to copy text to clipboard. Please manually copy the page text and paste it into Hemingway App for comparison.\n\n1. Clear any existing text in Hemingway\n2. Copy text from this page\n3. Paste into Hemingway to compare scores");
+		}
+	};
+
+	const handleOpenHemingway = () => {
+		window.open("https://hemingwayapp.com/", "_blank");
+	};
+
+	return (
+		<div className="space-y-3">
+			{showCopyNotification && (
+				<div className="p-4 bg-blue-50 border-2 border-blue-400 rounded-lg relative">
+					<button
+						onClick={() => setShowCopyNotification(false)}
+						className="absolute top-2 right-2 text-blue-600 hover:text-blue-800 font-bold text-lg leading-none"
+						aria-label="Dismiss notification"
+					>
+						×
+					</button>
+					<div className="font-semibold text-blue-900 mb-3 text-base">✓ Text copied to clipboard!</div>
+					<div className="text-sm text-blue-900 space-y-2">
+						<div className="bg-blue-100 p-3 rounded border border-blue-300">
+							<div className="font-semibold mb-2">Follow these steps in Hemingway App:</div>
+							<ol className="list-decimal list-inside space-y-2">
+								<li>
+									<span className="font-semibold">Clear any existing text</span> in Hemingway App
+									<div className="text-xs text-blue-700 ml-5 mt-1">
+										(Hemingway may show text from your last session)
+									</div>
+								</li>
+								<li>
+									<span className="font-semibold">Paste</span> with Ctrl+V (or Cmd+V on Mac)
+								</li>
+								<li>
+									<span className="font-semibold">Compare</span> the readability scores
+								</li>
+							</ol>
+						</div>
+						<div className="text-xs text-blue-700 italic">
+							The text from this SF.gov page is already on your clipboard, ready to paste.
+						</div>
+						<div className="pt-2">
+							<Button onClick={handleOpenHemingway}>
+								Open Hemingway App
+							</Button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			<div className={`p-4 ${bgColor} rounded border ${borderColor}`}>
+				<div className="flex items-baseline gap-3 mb-2">
+					<div className={`text-3xl font-bold ${scoreColor}`}>
+						{result.score}
+					</div>
+					<div className="text-sm font-semibold text-gray-700">
+						{result.gradeLevel}
+					</div>
+				</div>
+				<div className="text-sm text-gray-700 mb-2">
+					{result.interpretation}
+				</div>
+
+				{result.factors && result.factors.length > 0 && (
+					<div className="mb-3">
+						<ul className="text-sm text-gray-600 space-y-1">
+							{result.factors.map((factor, index) => (
+								<li key={index} className="flex items-start gap-2">
+									<span className="text-gray-400 mt-1">•</span>
+									<span>{factor}</span>
+								</li>
+							))}
+						</ul>
+					</div>
+				)}
+
+				{result.structureIssues && result.structureIssues.length > 0 && (
+					<div className="mb-3 pt-3 border-t border-gray-200">
+						<div className="text-sm font-semibold text-gray-700 mb-2">Content structure</div>
+						<ul className="text-sm text-gray-600 space-y-1">
+							{result.structureIssues.map((issue, index) => (
+								<li key={index} className="flex items-start gap-2">
+									<span className="text-gray-400 mt-1">•</span>
+									<span>{issue}</span>
+								</li>
+							))}
+						</ul>
+					</div>
+				)}
+
+				<div className={`text-sm font-medium ${scoreColor} mb-3`}>
+					{result.recommendation}
+				</div>
+
+				{result.hasContent && (
+					<div className="pt-2 border-t border-gray-200 space-y-2">
+						<Button
+							onClick={handleCompareWithHemingway}
+							className="text-xs px-3 py-1"
+						>
+							Get help in Hemingway App
+						</Button>
+						<div className="text-xs text-gray-600">
+							Hemingway will suggest more ways to make your page easier to read
+						</div>
+					</div>
+				)}
+			</div>
+
+			<div className="text-xs text-gray-600 italic">
+				Score calculated using adaptive Automated Readability Index, adjusted for sentence complexity. Results will be close to, but may not exactly match, Hemingway App scores. SF.gov aims for 8th grade level or lower for accessibility.
+			</div>
+		</div>
+	);
+};
+
+// ─── types ──────────────────────────────────────────────────────────────
+
+interface A11yResults {
+	headings: HeadingNestingIssue[];
+	images: ImageAltTextInfo[];
+	links: LinkAccessibilityResults;
+	tables: TableAccessibilityResults | null;
+	videos: VideoAccessibilityResults | null;
+	readability: ReadabilityScore | null;
+}
+
+const emptyResults: A11yResults = {
+	headings: [],
+	images: [],
+	links: emptyLinkResults,
+	tables: null,
+	videos: null,
+	readability: null,
+};
+
+// ─── highlight helpers (run in page context) ────────────────────────────
+
+function clearAllHighlights() {
+	// heading highlights
+	document.querySelectorAll("[data-a11y-heading-issue]").forEach(el => {
+		el.removeAttribute("data-a11y-heading-issue");
+		if (el instanceof HTMLElement) {
+			el.style.backgroundColor = "";
+			el.style.outline = "";
+		}
+	});
+	// table highlights
+	document.querySelectorAll("[data-a11y-table-issue]").forEach(el => {
+		el.removeAttribute("data-a11y-table-issue");
+		if (el instanceof HTMLElement) {
+			el.style.outline = "";
+			el.style.outlineOffset = "";
+		}
+	});
+	// video highlights
+	document.querySelectorAll("[data-a11y-video-issue]").forEach(el => {
+		el.removeAttribute("data-a11y-video-issue");
+		if (el instanceof HTMLElement) {
+			el.style.outline = "";
+			el.style.outlineOffset = "";
+		}
+	});
+	// link highlights are cleaned up by checkLinkAccessibility itself
+}
+
+function applyHighlights() {
+	// heading highlights
+	document.querySelectorAll("[data-a11y-heading-issue]").forEach(el => {
+		if (el instanceof HTMLElement) {
+			el.style.backgroundColor = "yellow";
+			el.style.outline = "2px solid orange";
+		}
+	});
+	// link highlights
+	document.querySelectorAll("[data-a11y-link-issue]").forEach(el => {
+		if (el instanceof HTMLElement) {
+			el.style.outline = "2px solid #9b59b6";
+			el.style.outlineOffset = "2px";
+		}
+	});
+	// table highlights
+	document.querySelectorAll("[data-a11y-table-issue]").forEach(el => {
+		if (el instanceof HTMLElement) {
+			el.style.outline = "3px solid #dc2626";
+			el.style.outlineOffset = "2px";
+		}
+	});
+	// video highlights
+	document.querySelectorAll("[data-a11y-video-issue]").forEach(el => {
+		if (el instanceof HTMLElement) {
+			el.style.outline = "3px solid #dc2626";
+			el.style.outlineOffset = "2px";
+		}
+	});
+}
+
+// ─── main component ─────────────────────────────────────────────────────
+
 interface A11yCheckerProps {
 	pageUrl: string;
 	images: MediaAsset[];
@@ -540,25 +587,11 @@ export function A11yChecker({
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [hasRun, setHasRun] = useState(false);
-	const [headingIssues, setHeadingIssues] = useState<HeadingNestingIssue[]>([]);
-	const [imageAltTextResults, setImageAltTextResults] = useState<ImageAltTextInfo[]>([]);
-	const [linkAccessibilityResults, setLinkAccessibilityResults] = useState<LinkAccessibilityResults>({
-		rawUrls: [],
-		vagueLinks: [],
-		vagueButtons: [],
-	});
-	const [tableAccessibilityResults, setTableAccessibilityResults] = useState<TableAccessibilityResults | null>(null);
-	const [videoAccessibilityResults, setVideoAccessibilityResults] = useState<VideoAccessibilityResults | null>(null);
-	const [readabilityScore, setReadabilityScore] = useState<ReadabilityScore | null>(null);
+	const [results, setResults] = useState<A11yResults>(emptyResults);
 
-	// clear results when page URL changes, but keep readability score and notification
+	// clear results when page URL changes
 	useEffect(() => {
-		setHeadingIssues([]);
-		setImageAltTextResults([]);
-		setLinkAccessibilityResults({ rawUrls: [], vagueLinks: [], vagueButtons: [] });
-		setTableAccessibilityResults(null);
-		setVideoAccessibilityResults(null);
-		// don't clear readabilityScore or hasRun so notification persists
+		setResults(emptyResults);
 		setError(null);
 	}, [pageUrl]);
 
@@ -566,12 +599,7 @@ export function A11yChecker({
 		setIsLoading(true);
 		setError(null);
 		setHasRun(false);
-		setHeadingIssues([]);
-		setImageAltTextResults([]);
-		setLinkAccessibilityResults({ rawUrls: [], vagueLinks: [], vagueButtons: [] });
-		setTableAccessibilityResults(null);
-		setVideoAccessibilityResults(null);
-		setReadabilityScore(null);
+		setResults(emptyResults);
 
 		onCheckStart?.();
 
@@ -585,183 +613,32 @@ export function A11yChecker({
 				throw new Error("No active tab found");
 			}
 
-			// clean up any previous highlights from prior runs
-			await chrome.scripting.executeScript({
-				target: { tabId: tab.id },
-				func: () => {
-					// remove heading highlights
-					document.querySelectorAll("h1, h2, h3, h4, h5, h6").forEach(el => {
-						if (el instanceof HTMLElement) {
-							el.style.backgroundColor = "";
-							el.style.outline = "";
-						}
-					});
-					// remove table highlights
-					document.querySelectorAll("[data-a11y-table-issue]").forEach(el => {
-						el.removeAttribute("data-a11y-table-issue");
-						if (el instanceof HTMLElement) {
-							el.style.outline = "";
-							el.style.outlineOffset = "";
-						}
-					});
-					// remove video highlights
-					document.querySelectorAll("[data-a11y-video-issue]").forEach(el => {
-						el.removeAttribute("data-a11y-video-issue");
-						if (el instanceof HTMLElement) {
-							el.style.outline = "";
-							el.style.outlineOffset = "";
-						}
-					});
-					// link highlights are cleaned up by checkLinkAccessibility itself
-				},
+			const tabId = tab.id;
+
+			// clean up any previous highlights
+			await executeInTab(tabId, clearAllHighlights);
+
+			// run all checks in parallel
+			const [headings, altText, linkData, tableData, videoData, readability] = await Promise.all([
+				executeInTab(tabId, checkHeadingNesting),
+				executeInTab(tabId, checkImageAltText),
+				executeInTab(tabId, checkLinkAccessibility),
+				executeInTab(tabId, checkTableAccessibility),
+				executeInTab(tabId, checkVideoAccessibility),
+				executeInTab(tabId, calculateReadabilityScore),
+			]);
+
+			// apply all highlights in one pass
+			await executeInTab(tabId, applyHighlights);
+
+			setResults({
+				headings: headings ?? [],
+				images: altText ?? [],
+				links: linkData ?? emptyLinkResults,
+				tables: tableData ?? { totalTables: 0, issues: [] },
+				videos: videoData ?? { totalVideos: 0, issues: [] },
+				readability: readability ?? null,
 			});
-
-			// check heading nesting
-			const nestingResults = await chrome.scripting.executeScript({
-				target: { tabId: tab.id },
-				func: checkHeadingNesting,
-			});
-
-			const issues = nestingResults[0]?.result as HeadingNestingIssue[] | undefined;
-
-			if (issues && issues.length > 0) {
-				setHeadingIssues(issues);
-
-				// highlight the problematic headings on the page
-				await chrome.scripting.executeScript({
-					target: { tabId: tab.id },
-					func: (issueTexts: string[]) => {
-						const headings = Array.from(document.querySelectorAll("h1, h2, h3, h4, h5, h6"));
-						headings.forEach(heading => {
-							const text = heading.textContent?.trim() || "";
-							if (issueTexts.includes(text)) {
-								if (heading instanceof HTMLElement) {
-									heading.style.backgroundColor = "yellow";
-									heading.style.outline = "2px solid orange";
-								}
-							}
-						});
-					},
-					args: [issues.map(issue => issue.toText)],
-				});
-			} else {
-				setHeadingIssues([]);
-			}
-
-			// check image alt text for all images on the page (excluding header/footer)
-			const altTextResults = await chrome.scripting.executeScript({
-				target: { tabId: tab.id },
-				func: checkImageAltText,
-			});
-
-			const altTextInfo = altTextResults[0]?.result as ImageAltTextInfo[] | undefined;
-			if (altTextInfo) {
-				setImageAltTextResults(altTextInfo);
-			}
-
-			// check link accessibility
-			const linkResults = await chrome.scripting.executeScript({
-				target: { tabId: tab.id },
-				func: checkLinkAccessibility,
-			});
-
-			const linkIssues = linkResults[0]?.result as LinkAccessibilityResults | undefined;
-			if (linkIssues) {
-				setLinkAccessibilityResults(linkIssues);
-
-				// highlight the problematic links and buttons on the page
-				const allIssues = [...linkIssues.rawUrls, ...linkIssues.vagueLinks, ...linkIssues.vagueButtons];
-				if (allIssues.length > 0) {
-					await chrome.scripting.executeScript({
-						target: { tabId: tab.id },
-						func: () => {
-							// find all elements that were flagged (stored in a data attribute by checkLinkAccessibility)
-							const flaggedElements = document.querySelectorAll("[data-a11y-link-issue]");
-							flaggedElements.forEach(el => {
-								if (el instanceof HTMLElement) {
-									el.style.outline = "2px solid #9b59b6";
-									el.style.outlineOffset = "2px";
-								}
-							});
-						},
-					});
-				}
-			}
-
-			// check table accessibility
-			const tableResults = await chrome.scripting.executeScript({
-				target: { tabId: tab.id },
-				func: checkTableAccessibility,
-			});
-
-			const tableData = tableResults[0]?.result as TableAccessibilityResults | undefined;
-
-			if (tableData) {
-				setTableAccessibilityResults(tableData);
-
-				// highlight the problematic tables on the page
-				if (tableData.issues.length > 0) {
-					await chrome.scripting.executeScript({
-						target: { tabId: tab.id },
-						func: () => {
-							// find all tables that were flagged (stored in a data attribute by checkTableAccessibility)
-							const flaggedTables = document.querySelectorAll("[data-a11y-table-issue]");
-							flaggedTables.forEach(table => {
-								if (table instanceof HTMLElement) {
-									table.style.outline = "3px solid #dc2626";
-									table.style.outlineOffset = "2px";
-								}
-							});
-						},
-					});
-				}
-			} else {
-				// if no results returned, assume no tables
-				setTableAccessibilityResults({ totalTables: 0, issues: [] });
-			}
-
-			// check video accessibility
-			const videoResults = await chrome.scripting.executeScript({
-				target: { tabId: tab.id },
-				func: checkVideoAccessibility,
-			});
-
-			const videoData = videoResults[0]?.result as VideoAccessibilityResults | undefined;
-
-			if (videoData) {
-				setVideoAccessibilityResults(videoData);
-
-				// highlight the problematic videos on the page
-				if (videoData.issues.length > 0) {
-					await chrome.scripting.executeScript({
-						target: { tabId: tab.id },
-						func: () => {
-							// find all videos that were flagged (stored in a data attribute by checkVideoAccessibility)
-							const flaggedVideos = document.querySelectorAll("[data-a11y-video-issue]");
-							flaggedVideos.forEach(video => {
-								if (video instanceof HTMLElement) {
-									video.style.outline = "3px solid #dc2626";
-									video.style.outlineOffset = "2px";
-								}
-							});
-						},
-					});
-				}
-			} else {
-				// if no results returned, assume no videos
-				setVideoAccessibilityResults({ totalVideos: 0, issues: [] });
-			}
-
-			// calculate readability score
-			const readabilityResults = await chrome.scripting.executeScript({
-				target: { tabId: tab.id },
-				func: calculateReadabilityScore,
-			});
-
-			const readability = readabilityResults[0]?.result as ReadabilityScore | undefined;
-			if (readability) {
-				setReadabilityScore(readability);
-			}
 
 			setHasRun(true);
 			setIsLoading(false);
@@ -774,6 +651,29 @@ export function A11yChecker({
 			onCheckError?.(errorMessage);
 		}
 	};
+
+	/** extract page text on-demand and copy to clipboard */
+	const handleCopyPageText = async () => {
+		const [tab] = await chrome.tabs.query({
+			active: true,
+			currentWindow: true,
+		});
+
+		if (!tab?.id) {
+			throw new Error("No active tab found");
+		}
+
+		const text = await executeInTab(tab.id, extractPageText);
+
+		if (!text) {
+			throw new Error("No text could be extracted from the page");
+		}
+
+		await navigator.clipboard.writeText(text);
+	};
+
+	const hasTables = results.tables && results.tables.totalTables > 0;
+	const hasVideos = results.videos && results.videos.totalVideos > 0;
 
 	return (
 		<div className="space-y-4">
@@ -795,33 +695,39 @@ export function A11yChecker({
 				<div className="space-y-6">
 					<div>
 						<h3 className="text-sm font-semibold text-gray-700 mb-3">Heading nesting</h3>
-						<HeadingNestingResults issues={headingIssues} />
+						<HeadingNestingResults issues={results.headings} />
 					</div>
 
 					<div>
 						<h3 className="text-sm font-semibold text-gray-700 mb-3">Image alt text</h3>
-						<ImageAltTextResults results={imageAltTextResults} apiImages={images} />
+						<ImageAltTextResults results={results.images} apiImages={images} />
 					</div>
 
 					<div>
 						<h3 className="text-sm font-semibold text-gray-700 mb-3">Inaccessible links</h3>
-						<LinkAccessibilityResultsComponent results={linkAccessibilityResults} />
+						<LinkAccessibilityResultsComponent results={results.links} />
 					</div>
 
-					<div>
-						<h3 className="text-sm font-semibold text-gray-700 mb-3">Table accessibility</h3>
-						<TableAccessibilityResultsComponent results={tableAccessibilityResults} />
-					</div>
+					{hasTables && (
+						<div>
+							<h3 className="text-sm font-semibold text-gray-700 mb-3">Table accessibility</h3>
+							<TableAccessibilityResultsComponent results={results.tables!} />
+						</div>
+					)}
 
-					<div>
-						<h3 className="text-sm font-semibold text-gray-700 mb-3">Video accessibility</h3>
-						<VideoAccessibilityResultsComponent results={videoAccessibilityResults} />
-					</div>
+					{hasVideos && (
+						<div>
+							<h3 className="text-sm font-semibold text-gray-700 mb-3">Video accessibility</h3>
+							<VideoAccessibilityResultsComponent results={results.videos!} />
+						</div>
+					)}
 
-					<div>
-						<h3 className="text-sm font-semibold text-gray-700 mb-3">Readability score</h3>
-						<ReadabilityScoreResults result={readabilityScore} />
-					</div>
+					{results.readability && (
+						<div>
+							<h3 className="text-sm font-semibold text-gray-700 mb-3">Readability score</h3>
+							<ReadabilityScoreResults result={results.readability} onCopyText={handleCopyPageText} />
+						</div>
+					)}
 				</div>
 			)}
 		</div>
