@@ -5,7 +5,6 @@ export interface HeadingNestingIssue {
 	toLevel: number;
 	fromText: string;
 	toText: string;
-	toElement: HTMLElement;
 }
 
 /**
@@ -80,12 +79,14 @@ export function checkHeadingNesting(): HeadingNestingIssue[] {
 
 		// check if heading level jumps by more than 1 (e.g., H2 to H4)
 		if (currLevel > prevLevel + 1) {
+			// mark the element for highlighting
+			currHeading.setAttribute("data-a11y-heading-issue", "true");
+
 			issues.push({
 				fromLevel: prevLevel,
 				toLevel: currLevel,
 				fromText: prevHeading.textContent?.trim() || "",
 				toText: currHeading.textContent?.trim() || "",
-				toElement: currHeading as HTMLElement,
 			});
 		}
 	}
@@ -152,6 +153,7 @@ export interface VideoAccessibilityIssue {
 	videoSrc: string;
 	missingCaptions: boolean;
 	missingTranscript: boolean;
+	needsManualCaptionCheck: boolean;
 }
 
 export interface VideoAccessibilityResults {
@@ -175,6 +177,7 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 	contentVideos.forEach((video, index) => {
 		let missingCaptions = false;
 		let missingTranscript = false;
+		let needsManualCaptionCheck = false;
 		let videoSrc = "";
 		
 		if (video.tagName.toLowerCase() === "video") {
@@ -209,8 +212,8 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 			if (!hasYouTubeCaptions && src.includes("youtube")) {
 				missingCaptions = true;
 			} else if (src.includes("vimeo")) {
-				// for Vimeo, we can't easily detect captions, so we'll flag it for manual check
-				missingCaptions = true;
+				// for Vimeo, we can't detect captions from the embed URL
+				needsManualCaptionCheck = true;
 			}
 		}
 		
@@ -233,15 +236,16 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 		}
 		
 		// if video has any issues, add to results
-		if (missingCaptions || missingTranscript) {
+		if (missingCaptions || missingTranscript || needsManualCaptionCheck) {
 			// mark the video for highlighting
 			video.setAttribute("data-a11y-video-issue", "true");
-			
+
 			issues.push({
 				videoIndex: index + 1,
 				videoSrc: videoSrc.substring(0, 100), // truncate long URLs
 				missingCaptions,
 				missingTranscript,
+				needsManualCaptionCheck,
 			});
 		}
 	});
@@ -333,7 +337,7 @@ export interface ReadabilityScore {
 	sentenceCount: number;
 	recommendation: string;
 	factors: string[];
-	extractedText?: string;
+	hasContent: boolean;
 	structureIssues?: string[];
 }
 
@@ -952,11 +956,11 @@ export function calculateReadabilityScore(): ReadabilityScore {
 			sentenceCount: finalSentences.length,
 			recommendation,
 			factors,
-			extractedText: textContent,
+			hasContent: true,
 			structureIssues: structureIssues.length > 0 ? structureIssues : undefined,
 		};
 	}
-	
+
 	return {
 		score,
 		gradeLevel,
@@ -966,6 +970,95 @@ export function calculateReadabilityScore(): ReadabilityScore {
 		sentenceCount: 0,
 		recommendation,
 		factors: [],
-		extractedText: "",
+		hasContent: false,
 	};
+}
+
+/**
+ * extract the main text content from the page for clipboard copy
+ * this function runs in the page context via chrome.scripting.executeScript
+ */
+export function extractPageText(): string {
+	const shouldExclude = (el: Element): boolean => {
+		const excludedTags = ["header", "footer", "nav", "form", "code", "pre", "script", "style", "button", "input", "select", "textarea"];
+		const tagName = el.tagName.toLowerCase();
+
+		if (excludedTags.includes(tagName)) return true;
+		if (el.closest("header, footer, nav, form, code, pre")) return true;
+
+		if (el instanceof HTMLElement) {
+			const style = window.getComputedStyle(el);
+			if (style.display === "none" || style.visibility === "hidden") return true;
+		}
+
+		return false;
+	};
+
+	const contentSelectors = [
+		"main",
+		"[role='main']",
+		"article",
+		".main-content",
+		".content",
+		"#content",
+		".post-content",
+		".entry-content"
+	];
+
+	let mainContent: Element | null = null;
+	for (const selector of contentSelectors) {
+		mainContent = document.querySelector(selector);
+		if (mainContent) break;
+	}
+
+	let textContent = "";
+
+	if (mainContent) {
+		const walker = document.createTreeWalker(
+			mainContent,
+			NodeFilter.SHOW_TEXT,
+			{
+				acceptNode: (node) => {
+					const parent = node.parentElement;
+					if (!parent) return NodeFilter.FILTER_REJECT;
+					if (shouldExclude(parent)) return NodeFilter.FILTER_REJECT;
+					return NodeFilter.FILTER_ACCEPT;
+				},
+			}
+		);
+
+		let currentNode: Node | null;
+		while ((currentNode = walker.nextNode())) {
+			const text = currentNode.textContent || "";
+			if (text.trim()) {
+				textContent += text + " ";
+			}
+		}
+	} else {
+		const bodyClone = document.body.cloneNode(true) as HTMLElement;
+
+		const excludeSelectors = [
+			"header", "footer", "nav", "aside",
+			"form", "code", "pre", "script", "style",
+			"button", "input", "select", "textarea",
+			".header", ".footer", ".nav", ".navigation", ".sidebar",
+			".menu", ".breadcrumb", ".pagination", ".social",
+			".advertisement", ".ad", ".banner", ".popup",
+			"[role='banner']", "[role='navigation']", "[role='complementary']"
+		].join(", ");
+
+		bodyClone.querySelectorAll(excludeSelectors).forEach(el => el.remove());
+		textContent = bodyClone.textContent || "";
+	}
+
+	return textContent
+		.trim()
+		.replace(/\s+/g, " ")
+		.replace(/["\u201C\u201D\u2018\u2019]/g, "\"")
+		.replace(/[\u2013\u2014]/g, "-")
+		.replace(/https?:\/\/[^\s]+/g, "")
+		.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, "")
+		.replace(/\b\d+\b/g, "")
+		.replace(/\s+/g, " ")
+		.trim();
 }
