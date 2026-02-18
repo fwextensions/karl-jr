@@ -73,7 +73,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 		const ttlSeconds = env.TOKEN_TTL_SECONDS ? parseInt(env.TOKEN_TTL_SECONDS, 10) : 900;
 
 		// create token
-		const { token, expiresAt } = createToken(sessionId, env.TOKEN_SIGNING_SECRET, ttlSeconds);
+		const { token, expiresAt } = await createToken(sessionId, env.TOKEN_SIGNING_SECRET, ttlSeconds);
 
 		// return token response
 		const response: TokenResponse = {

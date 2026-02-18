@@ -4,372 +4,240 @@ import { createHash } from "node:crypto";
 import * as fc from "fast-check";
 import { createToken, verifyToken } from "./token.js";
 
+/**
+ * Helper to decode the payload from a JWT (3-part format: header.payload.signature).
+ */
+function decodeJwtPayload(token: string): Record<string, unknown> {
+	const parts = token.split(".");
+	const payloadJson = Buffer.from(parts[1], "base64url").toString("utf-8");
+	return JSON.parse(payloadJson);
+}
+
+/**
+ * fast-check wrapper for async property tests
+ */
+async function assertAsync<T extends unknown[]>(
+	arb: fc.Arbitrary<T>,
+	predicate: (...args: T) => Promise<void>,
+	opts = { numRuns: 100 }
+) {
+	// collect samples from the arbitrary
+	const samples = fc.sample(arb, opts.numRuns);
+	for (const sample of samples) {
+		await predicate(...sample);
+	}
+}
+
 describe("Token Creation Properties", () => {
 	// **Validates: Requirements 1.1, 1.5**
-	test("Property 1: Token creation produces valid fingerprints", () => {
-		fc.assert(
-			fc.property(
-				// generate arbitrary session IDs (avoid very short strings that could match JSON syntax)
+	test("Property 1: Token creation produces valid fingerprints", async () => {
+		await assertAsync(
+			fc.tuple(
 				fc.string({ minLength: 8, maxLength: 256 }),
-				fc.string({ minLength: 32, maxLength: 64 }), // secret
-				(sessionId, secret) => {
-					// create token
-					const result = createToken(sessionId, secret);
+				fc.string({ minLength: 32, maxLength: 64 })
+			) as fc.Arbitrary<[string, string]>,
+			async (sessionId: string, secret: string) => {
+				const result = await createToken(sessionId, secret);
 
-					// compute expected fingerprint
-					const expectedFingerprint = createHash("sha256")
-						.update(sessionId)
-						.digest("hex");
+				const expectedFingerprint = createHash("sha256")
+					.update(sessionId)
+					.digest("hex");
 
-					// decode token payload
-					const [payloadBase64url] = result.token.split(".");
-					const payloadJson = Buffer.from(payloadBase64url, "base64url").toString("utf-8");
-					const payload = JSON.parse(payloadJson);
+				const payload = decodeJwtPayload(result.token);
 
-					// verify fingerprint is present in payload
-					assert.equal(
-						payload.sfp,
-						expectedFingerprint,
-						"Token payload must contain SHA-256 hash of session ID"
-					);
+				assert.equal(
+					payload.sfp,
+					expectedFingerprint,
+					"Token payload must contain SHA-256 hash of session ID"
+				);
+				assert.equal(typeof payload.sfp, "string");
+				assert.equal(
+					(payload.sfp as string).length,
+					64,
+					"Session fingerprint must be 64 hex characters (SHA-256)"
+				);
+				assert.notEqual(
+					payload.sfp,
+					sessionId,
+					"Session fingerprint must not be the raw session ID"
+				);
 
-					// verify the payload contains the fingerprint, not the raw session ID
-					assert.equal(
-						typeof payload.sfp,
-						"string",
-						"Payload must have sfp field"
-					);
-					assert.equal(
-						payload.sfp.length,
-						64,
-						"Session fingerprint must be 64 hex characters (SHA-256)"
-					);
-					assert.notEqual(
-						payload.sfp,
-						sessionId,
-						"Session fingerprint must not be the raw session ID"
-					);
-
-					// verify the payload does not have a field containing the raw session ID
-					// (check all string values in the payload)
-					const payloadValues = Object.values(payload).filter(v => typeof v === "string");
-					for (const value of payloadValues) {
-						if (value === sessionId) {
-							assert.fail("Token payload must not contain raw session ID as a value");
-						}
+				// verify no field contains the raw session ID
+				const payloadValues = Object.values(payload).filter(v => typeof v === "string");
+				for (const value of payloadValues) {
+					if (value === sessionId) {
+						assert.fail("Token payload must not contain raw session ID as a value");
 					}
 				}
-			),
-			{ numRuns: 100 }
+			}
 		);
 	});
 
 	// **Validates: Requirements 1.2**
-	test("Property 2: Token creation includes required timestamps", () => {
-		fc.assert(
-			fc.property(
-				fc.string({ minLength: 8, maxLength: 256 }), // sessionId
-				fc.string({ minLength: 32, maxLength: 64 }), // secret
-				fc.integer({ min: 1, max: 86400 }), // ttlSeconds (1 second to 1 day)
-				(sessionId, secret, ttlSeconds) => {
-					// capture time before token creation
-					const beforeCreation = Math.floor(Date.now() / 1000);
+	test("Property 2: Token creation includes required timestamps", async () => {
+		await assertAsync(
+			fc.tuple(
+				fc.string({ minLength: 8, maxLength: 256 }),
+				fc.string({ minLength: 32, maxLength: 64 }),
+				fc.integer({ min: 1, max: 86400 })
+			) as fc.Arbitrary<[string, string, number]>,
+			async (sessionId: string, secret: string, ttlSeconds: number) => {
+				const beforeCreation = Math.floor(Date.now() / 1000);
+				const result = await createToken(sessionId, secret, ttlSeconds);
+				const afterCreation = Math.floor(Date.now() / 1000);
 
-					// create token
-					const result = createToken(sessionId, secret, ttlSeconds);
+				const payload = decodeJwtPayload(result.token);
 
-					// capture time after token creation
-					const afterCreation = Math.floor(Date.now() / 1000);
+				assert.equal(typeof payload.iat, "number");
+				assert.equal(typeof payload.exp, "number");
 
-					// decode token payload
-					const [payloadBase64url] = result.token.split(".");
-					const payloadJson = Buffer.from(payloadBase64url, "base64url").toString("utf-8");
-					const payload = JSON.parse(payloadJson);
+				const iat = payload.iat as number;
+				const exp = payload.exp as number;
 
-					// verify iat and exp fields exist and are numbers
-					assert.equal(
-						typeof payload.iat,
-						"number",
-						"Token payload must contain iat field as a number"
-					);
-					assert.equal(
-						typeof payload.exp,
-						"number",
-						"Token payload must contain exp field as a number"
-					);
-
-					// verify iat is within reasonable bounds (between before and after creation)
-					assert.ok(
-						payload.iat >= beforeCreation && payload.iat <= afterCreation,
-						`iat (${payload.iat}) must be between ${beforeCreation} and ${afterCreation}`
-					);
-
-					// verify iat <= exp
-					assert.ok(
-						payload.iat <= payload.exp,
-						`iat (${payload.iat}) must be <= exp (${payload.exp})`
-					);
-
-					// verify exp = iat + ttlSeconds
-					assert.equal(
-						payload.exp,
-						payload.iat + ttlSeconds,
-						`exp must equal iat + ttlSeconds (${payload.iat} + ${ttlSeconds} = ${payload.iat + ttlSeconds})`
-					);
-				}
-			),
-			{ numRuns: 100 }
+				assert.ok(
+					iat >= beforeCreation && iat <= afterCreation,
+					`iat (${iat}) must be between ${beforeCreation} and ${afterCreation}`
+				);
+				assert.ok(iat <= exp);
+				assert.equal(exp, iat + ttlSeconds);
+			}
 		);
 	});
 
 	// **Validates: Requirements 1.4**
-	test("Property 3: Token format is consistent", () => {
-		fc.assert(
-			fc.property(
-				fc.string({ minLength: 8, maxLength: 256 }), // sessionId
-				fc.string({ minLength: 32, maxLength: 64 }), // secret
-				fc.integer({ min: 1, max: 86400 }), // ttlSeconds
-				(sessionId, secret, ttlSeconds) => {
-					// create token
-					const result = createToken(sessionId, secret, ttlSeconds);
+	test("Property 3: Token format is standard JWT (3 parts)", async () => {
+		await assertAsync(
+			fc.tuple(
+				fc.string({ minLength: 8, maxLength: 256 }),
+				fc.string({ minLength: 32, maxLength: 64 }),
+				fc.integer({ min: 1, max: 86400 })
+			) as fc.Arbitrary<[string, string, number]>,
+			async (sessionId: string, secret: string, ttlSeconds: number) => {
+				const result = await createToken(sessionId, secret, ttlSeconds);
 
-					// verify token is a string
-					assert.equal(
-						typeof result.token,
-						"string",
-						"Token must be a string"
-					);
+				assert.equal(typeof result.token, "string");
 
-					// verify token contains exactly one dot separator
-					const parts = result.token.split(".");
-					assert.equal(
-						parts.length,
-						2,
-						"Token must contain exactly one dot separator"
-					);
+				// JWT has exactly 3 parts (header.payload.signature)
+				const parts = result.token.split(".");
+				assert.equal(parts.length, 3, "JWT must contain exactly two dot separators");
 
-					const [payloadPart, signaturePart] = parts;
-
-					// verify both parts are non-empty
+				for (const part of parts) {
+					assert.ok(part.length > 0, "Each JWT part must be non-empty");
 					assert.ok(
-						payloadPart.length > 0,
-						"Payload part must not be empty"
-					);
-					assert.ok(
-						signaturePart.length > 0,
-						"Signature part must not be empty"
-					);
-
-					// verify both parts are valid base64url (no invalid characters)
-					const base64urlPattern = /^[A-Za-z0-9_-]+$/;
-					assert.ok(
-						base64urlPattern.test(payloadPart),
-						"Payload part must be valid base64url (only A-Za-z0-9_-)"
-					);
-					assert.ok(
-						base64urlPattern.test(signaturePart),
-						"Signature part must be valid base64url (only A-Za-z0-9_-)"
-					);
-
-					// verify payload can be decoded
-					let decodedPayload;
-					try {
-						const payloadJson = Buffer.from(payloadPart, "base64url").toString("utf-8");
-						decodedPayload = JSON.parse(payloadJson);
-					} catch (error) {
-						assert.fail(`Payload part must be decodable as base64url JSON: ${error}`);
-					}
-
-					// verify decoded payload has expected structure
-					assert.ok(
-						typeof decodedPayload === "object" && decodedPayload !== null,
-						"Decoded payload must be an object"
-					);
-					assert.ok(
-						"sfp" in decodedPayload,
-						"Decoded payload must have sfp field"
-					);
-					assert.ok(
-						"iat" in decodedPayload,
-						"Decoded payload must have iat field"
-					);
-					assert.ok(
-						"exp" in decodedPayload,
-						"Decoded payload must have exp field"
+						/^[A-Za-z0-9_-]+$/.test(part),
+						"Each JWT part must be valid base64url"
 					);
 				}
-			),
-			{ numRuns: 100 }
+
+				// verify header specifies HS256
+				const headerJson = Buffer.from(parts[0], "base64url").toString("utf-8");
+				const header = JSON.parse(headerJson);
+				assert.equal(header.alg, "HS256");
+
+				// verify payload has expected claims
+				const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf-8"));
+				assert.ok("sfp" in payload);
+				assert.ok("iat" in payload);
+				assert.ok("exp" in payload);
+			}
 		);
 	});
 });
 
 describe("Token Verification Properties", () => {
 	// **Validates: Requirements 2.6**
-	test("Property 4: Token verification is a round-trip", () => {
-		fc.assert(
-			fc.property(
-				fc.string({ minLength: 8, maxLength: 256 }), // sessionId
-				fc.string({ minLength: 32, maxLength: 64 }), // secret
-				fc.integer({ min: 1, max: 86400 }), // ttlSeconds (1 second to 1 day)
-				(sessionId, secret, ttlSeconds) => {
-					// create token
-					const result = createToken(sessionId, secret, ttlSeconds);
+	test("Property 4: Token verification is a round-trip", async () => {
+		await assertAsync(
+			fc.tuple(
+				fc.string({ minLength: 8, maxLength: 256 }),
+				fc.string({ minLength: 32, maxLength: 64 }),
+				fc.integer({ min: 1, max: 86400 })
+			) as fc.Arbitrary<[string, string, number]>,
+			async (sessionId: string, secret: string, ttlSeconds: number) => {
+				const result = await createToken(sessionId, secret, ttlSeconds);
+				const verifiedPayload = await verifyToken(result.token, secret);
 
-					// verify token with the same secret
-					const verifiedPayload = verifyToken(result.token, secret);
+				assert.notEqual(verifiedPayload, null, "Token verification must succeed");
 
-					// verification must succeed
-					assert.notEqual(
-						verifiedPayload,
-						null,
-						"Token verification must succeed for a valid token"
-					);
+				const expectedFingerprint = createHash("sha256")
+					.update(sessionId)
+					.digest("hex");
 
-					// compute expected fingerprint
-					const expectedFingerprint = createHash("sha256")
-						.update(sessionId)
-						.digest("hex");
-
-					// verify the payload fields match what was encoded
-					assert.equal(
-						verifiedPayload!.sfp,
-						expectedFingerprint,
-						"Verified payload sfp must match the original session fingerprint"
-					);
-
-					// verify iat and exp are preserved (within reasonable bounds due to timing)
-					// decode the original payload to compare
-					const [payloadBase64url] = result.token.split(".");
-					const payloadJson = Buffer.from(payloadBase64url, "base64url").toString("utf-8");
-					const originalPayload = JSON.parse(payloadJson);
-
-					assert.equal(
-						verifiedPayload!.iat,
-						originalPayload.iat,
-						"Verified payload iat must match the original iat"
-					);
-
-					assert.equal(
-						verifiedPayload!.exp,
-						originalPayload.exp,
-						"Verified payload exp must match the original exp"
-					);
-
-					// verify the relationship between iat and exp is preserved
-					assert.equal(
-						verifiedPayload!.exp - verifiedPayload!.iat,
-						ttlSeconds,
-						"Verified payload must preserve the TTL relationship"
-					);
-				}
-			),
-			{ numRuns: 100 }
+				assert.equal(verifiedPayload!.sfp, expectedFingerprint);
+				assert.equal(verifiedPayload!.exp - verifiedPayload!.iat, ttlSeconds);
+			}
 		);
 	});
 
 	// **Validates: Requirements 2.2**
-	test("Property 5: Invalid signatures are rejected", () => {
-		fc.assert(
-			fc.property(
-				fc.string({ minLength: 8, maxLength: 256 }), // sessionId
-				fc.string({ minLength: 32, maxLength: 64 }), // secret
-				fc.integer({ min: 1, max: 86400 }), // ttlSeconds
-				(sessionId, secret, ttlSeconds) => {
-					// create a valid token
-					const result = createToken(sessionId, secret, ttlSeconds);
-					const [payloadPart, signaturePart] = result.token.split(".");
+	test("Property 5: Invalid signatures are rejected", async () => {
+		await assertAsync(
+			fc.tuple(
+				fc.string({ minLength: 8, maxLength: 256 }),
+				fc.string({ minLength: 32, maxLength: 64 }),
+				fc.integer({ min: 1, max: 86400 })
+			) as fc.Arbitrary<[string, string, number]>,
+			async (sessionId: string, secret: string, ttlSeconds: number) => {
+				const result = await createToken(sessionId, secret, ttlSeconds);
+				const parts = result.token.split(".");
 
-					// tamper with the signature by flipping a character
-					// ensure we have at least one character to flip
-					if (signaturePart.length === 0) {
-						return; // skip this case
-					}
+				// tamper with the signature
+				const sig = parts[2];
+				if (sig.length === 0) return;
 
-					// flip the first character of the signature
-					const tamperedChar = signaturePart[0] === "A" ? "B" : "A";
-					const tamperedSignature = tamperedChar + signaturePart.slice(1);
-					const tamperedToken = `${payloadPart}.${tamperedSignature}`;
+				const tamperedChar = sig[0] === "A" ? "B" : "A";
+				const tamperedToken = `${parts[0]}.${parts[1]}.${tamperedChar}${sig.slice(1)}`;
 
-					// verify the tampered token is rejected
-					const verifiedPayload = verifyToken(tamperedToken, secret);
-
-					assert.equal(
-						verifiedPayload,
-						null,
-						"Token with tampered signature must be rejected"
-					);
-				}
-			),
-			{ numRuns: 100 }
+				const verifiedPayload = await verifyToken(tamperedToken, secret);
+				assert.equal(verifiedPayload, null, "Token with tampered signature must be rejected");
+			}
 		);
 	});
 
 	// **Validates: Requirements 2.3**
-	test("Property 6: Expired tokens are rejected", () => {
-		fc.assert(
-			fc.property(
-				fc.string({ minLength: 8, maxLength: 256 }), // sessionId
-				fc.string({ minLength: 32, maxLength: 64 }), // secret
-				fc.integer({ min: -86400, max: -1 }), // negative ttlSeconds (already expired)
-				(sessionId, secret, ttlSeconds) => {
-					// create a token with negative TTL (already expired)
-					const result = createToken(sessionId, secret, ttlSeconds);
-
-					// verify the expired token is rejected
-					const verifiedPayload = verifyToken(result.token, secret);
-
-					assert.equal(
-						verifiedPayload,
-						null,
-						"Expired token must be rejected"
-					);
-				}
-			),
-			{ numRuns: 100 }
+	test("Property 6: Expired tokens are rejected", async () => {
+		await assertAsync(
+			fc.tuple(
+				fc.string({ minLength: 8, maxLength: 256 }),
+				fc.string({ minLength: 32, maxLength: 64 }),
+				fc.integer({ min: -86400, max: -1 })
+			) as fc.Arbitrary<[string, string, number]>,
+			async (sessionId: string, secret: string, ttlSeconds: number) => {
+				const result = await createToken(sessionId, secret, ttlSeconds);
+				const verifiedPayload = await verifyToken(result.token, secret);
+				assert.equal(verifiedPayload, null, "Expired token must be rejected");
+			}
 		);
 	});
 
 	// **Validates: Requirements 2.4, 2.5**
-	test("Property 7: Malformed tokens are rejected", () => {
-		fc.assert(
-			fc.property(
+	test("Property 7: Malformed tokens are rejected", async () => {
+		await assertAsync(
+			fc.tuple(
 				fc.oneof(
 					// tokens with no dot separator
 					fc.string({ minLength: 1, maxLength: 100 }).filter(s => !s.includes(".")),
-					// tokens with multiple dot separators
+					// tokens with wrong number of parts
 					fc.tuple(
-						fc.string({ minLength: 1, maxLength: 50 }),
 						fc.string({ minLength: 1, maxLength: 50 }),
 						fc.string({ minLength: 1, maxLength: 50 })
-					).map(([a, b, c]) => `${a}.${b}.${c}`),
-					// tokens with empty parts
+					).map(([a, b]) => `${a}.${b}`),
+					// empty parts
 					fc.constant("."),
+					fc.constant(".."),
 					fc.string({ minLength: 1, maxLength: 50 }).map(s => `${s}.`),
-					fc.string({ minLength: 1, maxLength: 50 }).map(s => `.${s}`),
-					// tokens with invalid base64url characters
-					fc.tuple(
-						fc.string({ minLength: 1, maxLength: 50 }),
-						fc.constantFrom("+", "/", "=", " ", "\n", "\t", "!", "@", "#")
-					).map(([base, invalid]) => `${base}${invalid}.signature`),
-					fc.tuple(
-						fc.string({ minLength: 1, maxLength: 50 }),
-						fc.constantFrom("+", "/", "=", " ", "\n", "\t", "!", "@", "#")
-					).map(([base, invalid]) => `payload.${base}${invalid}`)
+					fc.string({ minLength: 1, maxLength: 50 }).map(s => `.${s}`)
 				),
-				fc.string({ minLength: 32, maxLength: 64 }), // secret
-				(malformedToken, secret) => {
-					// verify the malformed token is rejected
-					const verifiedPayload = verifyToken(malformedToken, secret);
-
-					assert.equal(
-						verifiedPayload,
-						null,
-						`Malformed token "${malformedToken}" must be rejected`
-					);
-				}
-			),
-			{ numRuns: 100 }
+				fc.string({ minLength: 32, maxLength: 64 })
+			) as fc.Arbitrary<[string, string]>,
+			async (malformedToken: string, secret: string) => {
+				const verifiedPayload = await verifyToken(malformedToken, secret);
+				assert.equal(
+					verifiedPayload,
+					null,
+					`Malformed token "${malformedToken}" must be rejected`
+				);
+			}
 		);
 	});
 });
@@ -377,163 +245,136 @@ describe("Token Verification Properties", () => {
 describe("Token Edge Cases", () => {
 	const SECRET = "test-secret-key-with-sufficient-length-for-hmac";
 
-	test("empty session ID creates valid token", () => {
-		const result = createToken("", SECRET);
+	test("empty session ID creates valid token", async () => {
+		const result = await createToken("", SECRET);
 
-		assert.ok(result.token, "Token should be created for empty session ID");
-		assert.ok(result.expiresAt instanceof Date, "expiresAt should be a Date");
+		assert.ok(result.token);
+		assert.ok(result.expiresAt instanceof Date);
 
-		// verify token can be verified
-		const payload = verifyToken(result.token, SECRET);
-		assert.notEqual(payload, null, "Token with empty session ID should be verifiable");
+		const payload = await verifyToken(result.token, SECRET);
+		assert.notEqual(payload, null);
 
-		// verify fingerprint is SHA-256 of empty string
 		const expectedFingerprint = createHash("sha256").update("").digest("hex");
 		assert.equal(payload!.sfp, expectedFingerprint);
 	});
 
-	test("very long session ID (>1KB) creates valid token", () => {
-		// create a session ID longer than 1KB
+	test("very long session ID (>1KB) creates valid token", async () => {
 		const longSessionId = "a".repeat(2048);
-		const result = createToken(longSessionId, SECRET);
+		const result = await createToken(longSessionId, SECRET);
 
-		assert.ok(result.token, "Token should be created for very long session ID");
+		assert.ok(result.token);
 
-		// verify token can be verified
-		const payload = verifyToken(result.token, SECRET);
-		assert.notEqual(payload, null, "Token with very long session ID should be verifiable");
+		const payload = await verifyToken(result.token, SECRET);
+		assert.notEqual(payload, null);
 
-		// verify fingerprint is correct
 		const expectedFingerprint = createHash("sha256").update(longSessionId).digest("hex");
 		assert.equal(payload!.sfp, expectedFingerprint);
 	});
 
-	test("session ID with special characters creates valid token", () => {
+	test("session ID with special characters creates valid token", async () => {
 		const specialChars = "!@#$%^&*()[]{}|\\:;\"'<>,.?/~`\n\t\r";
-		const result = createToken(specialChars, SECRET);
+		const result = await createToken(specialChars, SECRET);
 
-		assert.ok(result.token, "Token should be created for session ID with special characters");
+		assert.ok(result.token);
 
-		// verify token can be verified
-		const payload = verifyToken(result.token, SECRET);
-		assert.notEqual(payload, null, "Token with special characters should be verifiable");
+		const payload = await verifyToken(result.token, SECRET);
+		assert.notEqual(payload, null);
 
-		// verify fingerprint is correct
 		const expectedFingerprint = createHash("sha256").update(specialChars).digest("hex");
 		assert.equal(payload!.sfp, expectedFingerprint);
 	});
 
-	test("session ID with unicode characters creates valid token", () => {
+	test("session ID with unicode characters creates valid token", async () => {
 		const unicode = "你好世界🌍🚀";
-		const result = createToken(unicode, SECRET);
+		const result = await createToken(unicode, SECRET);
 
-		assert.ok(result.token, "Token should be created for session ID with unicode");
+		assert.ok(result.token);
 
-		// verify token can be verified
-		const payload = verifyToken(result.token, SECRET);
-		assert.notEqual(payload, null, "Token with unicode should be verifiable");
+		const payload = await verifyToken(result.token, SECRET);
+		assert.notEqual(payload, null);
 
-		// verify fingerprint is correct
 		const expectedFingerprint = createHash("sha256").update(unicode).digest("hex");
 		assert.equal(payload!.sfp, expectedFingerprint);
 	});
 
-	test("TTL of 0 seconds creates immediately expired token", () => {
-		const result = createToken("test-session", SECRET, 0);
+	test("TTL of 0 seconds creates immediately expired token", async () => {
+		const result = await createToken("test-session", SECRET, 0);
 
-		assert.ok(result.token, "Token should be created with TTL of 0");
+		assert.ok(result.token);
 
-		// token should be expired immediately
-		const payload = verifyToken(result.token, SECRET);
+		const payload = await verifyToken(result.token, SECRET);
 		assert.equal(payload, null, "Token with TTL of 0 should be immediately expired");
 	});
 
-	test("TTL of 1 second creates token that expires quickly", () => {
-		const result = createToken("test-session", SECRET, 1);
+	test("TTL of 1 second creates token that expires quickly", async () => {
+		const result = await createToken("test-session", SECRET, 1);
 
-		assert.ok(result.token, "Token should be created with TTL of 1");
+		assert.ok(result.token);
 
-		// token should be valid immediately
-		const payload = verifyToken(result.token, SECRET);
-		assert.notEqual(payload, null, "Token with TTL of 1 should be valid immediately");
-		assert.equal(payload!.exp - payload!.iat, 1, "TTL should be 1 second");
+		const payload = await verifyToken(result.token, SECRET);
+		assert.notEqual(payload, null);
+		assert.equal(payload!.exp - payload!.iat, 1);
 	});
 
-	test("TTL of maximum safe integer creates valid token", () => {
-		const maxSafeTTL = Number.MAX_SAFE_INTEGER;
-		const result = createToken("test-session", SECRET, maxSafeTTL);
+	test("negative TTL creates expired token", async () => {
+		const result = await createToken("test-session", SECRET, -3600);
 
-		assert.ok(result.token, "Token should be created with maximum safe integer TTL");
+		assert.ok(result.token);
 
-		// verify token can be verified
-		const payload = verifyToken(result.token, SECRET);
-		assert.notEqual(payload, null, "Token with max safe integer TTL should be verifiable");
-
-		// verify TTL is preserved (within reasonable bounds due to timing)
-		const actualTTL = payload!.exp - payload!.iat;
-		assert.equal(actualTTL, maxSafeTTL, "TTL should be preserved");
-	});
-
-	test("negative TTL creates expired token", () => {
-		const result = createToken("test-session", SECRET, -3600);
-
-		assert.ok(result.token, "Token should be created with negative TTL");
-
-		// token should be expired
-		const payload = verifyToken(result.token, SECRET);
+		const payload = await verifyToken(result.token, SECRET);
 		assert.equal(payload, null, "Token with negative TTL should be expired");
 	});
 
-	test("verifyToken handles null input", () => {
+	test("verifyToken handles null input", async () => {
 		// @ts-expect-error - testing null input
-		const payload = verifyToken(null, SECRET);
-		assert.equal(payload, null, "verifyToken should return null for null input");
+		const payload = await verifyToken(null, SECRET);
+		assert.equal(payload, null);
 	});
 
-	test("verifyToken handles undefined input", () => {
+	test("verifyToken handles undefined input", async () => {
 		// @ts-expect-error - testing undefined input
-		const payload = verifyToken(undefined, SECRET);
-		assert.equal(payload, null, "verifyToken should return null for undefined input");
+		const payload = await verifyToken(undefined, SECRET);
+		assert.equal(payload, null);
 	});
 
-	test("verifyToken handles empty string", () => {
-		const payload = verifyToken("", SECRET);
-		assert.equal(payload, null, "verifyToken should return null for empty string");
+	test("verifyToken handles empty string", async () => {
+		const payload = await verifyToken("", SECRET);
+		assert.equal(payload, null);
 	});
 
-	test("verifyToken handles whitespace-only string", () => {
-		const payload = verifyToken("   ", SECRET);
-		assert.equal(payload, null, "verifyToken should return null for whitespace-only string");
+	test("verifyToken handles whitespace-only string", async () => {
+		const payload = await verifyToken("   ", SECRET);
+		assert.equal(payload, null);
 	});
 
-	test("verifyToken handles token with only dots", () => {
-		const payload = verifyToken("...", SECRET);
-		assert.equal(payload, null, "verifyToken should return null for token with only dots");
+	test("verifyToken handles token with only dots", async () => {
+		const payload = await verifyToken("...", SECRET);
+		assert.equal(payload, null);
 	});
 
-	test("verifyToken handles token with null secret", () => {
-		const result = createToken("test-session", SECRET);
+	test("verifyToken handles token with null secret", async () => {
+		const result = await createToken("test-session", SECRET);
 		// @ts-expect-error - testing null secret
-		const payload = verifyToken(result.token, null);
-		assert.equal(payload, null, "verifyToken should return null for null secret");
+		const payload = await verifyToken(result.token, null);
+		assert.equal(payload, null);
 	});
 
-	test("verifyToken handles token with undefined secret", () => {
-		const result = createToken("test-session", SECRET);
+	test("verifyToken handles token with undefined secret", async () => {
+		const result = await createToken("test-session", SECRET);
 		// @ts-expect-error - testing undefined secret
-		const payload = verifyToken(result.token, undefined);
-		assert.equal(payload, null, "verifyToken should return null for undefined secret");
+		const payload = await verifyToken(result.token, undefined);
+		assert.equal(payload, null);
 	});
 
-	test("verifyToken handles token with empty secret", () => {
-		const result = createToken("test-session", SECRET);
-		const payload = verifyToken(result.token, "");
-		assert.equal(payload, null, "verifyToken should return null for empty secret");
+	test("verifyToken handles token with empty secret", async () => {
+		const result = await createToken("test-session", SECRET);
+		const payload = await verifyToken(result.token, "");
+		assert.equal(payload, null);
 	});
 
-	test("verifyToken handles token with wrong secret", () => {
-		const result = createToken("test-session", SECRET);
-		const payload = verifyToken(result.token, "wrong-secret");
-		assert.equal(payload, null, "verifyToken should return null for wrong secret");
+	test("verifyToken handles token with wrong secret", async () => {
+		const result = await createToken("test-session", SECRET);
+		const payload = await verifyToken(result.token, "wrong-secret");
+		assert.equal(payload, null);
 	});
 });

@@ -14,7 +14,7 @@ The current authentication flow sends the raw Wagtail `sessionid` cookie from th
 Replace the per-request session ID forwarding with a one-time token exchange:
 
 1. Extension sends the Wagtail session ID **once** to a new `/api/auth/token` endpoint.
-2. Server validates the session against Wagtail (same as today), then issues a short-lived, HMAC-signed token scoped to the companion API.
+2. Server validates the session against Wagtail (same as today), then issues a short-lived HS256 JWT scoped to the companion API.
 3. Extension stores the token in `chrome.storage.session` and uses it for all subsequent requests via `Authorization: Bearer <token>`.
 4. Server validates the token by verifying the HMAC signature locally -- no Redis lookup, no Wagtail roundtrip.
 5. On 401, extension re-does the exchange (transparent to the user).
@@ -53,7 +53,7 @@ Extension                           Vercel Server                    Wagtail
    |  3. GET /api/feedback               |                              |
    |     Authorization: Bearer <token>   |                              |
    |------------------------------------>|                              |
-   |                                     |  4. Verify HMAC signature    |
+   |                                     |  4. Verify JWT signature     |
    |                                     |     (no external call)       |
    |                                     |                              |
    |     { stats, records }              |                              |
@@ -62,21 +62,27 @@ Extension                           Vercel Server                    Wagtail
 
 ### Token Format
 
-The token is a base64url-encoded JSON payload with an appended HMAC-SHA256 signature. No need for a full JWT library -- the token structure is simple and internal.
+The token is a standard JWT (RFC 7519) signed with HS256, using the `jose` library. The 3-part format is:
 
 ```
-base64url(payload) + "." + base64url(hmac)
+base64url(header) + "." + base64url(payload) + "." + base64url(signature)
 ```
 
-**Payload:**
+**Header:**
+
+```json
+{ "alg": "HS256", "typ": "JWT" }
+```
+
+**Payload (custom claims):**
 
 ```typescript
 interface TokenPayload {
 	// session fingerprint: SHA-256(sessionId), NOT the session itself
 	sfp: string;
-	// issued-at: unix timestamp in seconds
+	// issued-at: unix timestamp in seconds (standard JWT claim)
 	iat: number;
-	// expires-at: unix timestamp in seconds
+	// expires-at: unix timestamp in seconds (standard JWT claim)
 	exp: number;
 }
 ```
@@ -85,11 +91,9 @@ The `sfp` (session fingerprint) field stores a SHA-256 hash of the Wagtail sessi
 
 **Signing:**
 
-```typescript
-HMAC-SHA256(base64url(payload), TOKEN_SIGNING_SECRET)
-```
+Handled by `jose`'s `SignJWT` class with HS256 algorithm.
 
-Where `TOKEN_SIGNING_SECRET` is a new Vercel environment variable (minimum 32 bytes of entropy, generated via `openssl rand -hex 32`).
+`TOKEN_SIGNING_SECRET` is a Vercel environment variable (minimum 32 bytes of entropy, generated via `openssl rand -hex 32`).
 
 ### Token Lifetime
 
@@ -137,41 +141,41 @@ export * from "./auth";
 
 ### 2. New server module: `packages/server/lib/token.ts`
 
-This module handles token creation and verification using Node's built-in `crypto` module.  No external dependencies.
+This module handles token creation and verification using the `jose` library for standard JWT operations, plus Node's `crypto` for session fingerprinting.
 
 **Exports:**
 
 ```typescript
 /**
- * Creates a signed token for the given session fingerprint.
+ * Creates a signed JWT for the given session fingerprint.
  * @param sessionId - the raw Wagtail session ID (hashed internally)
  * @param secret - the HMAC signing secret
  * @param ttlSeconds - token lifetime (default 900)
- * @returns { token: string; expiresAt: Date }
+ * @returns Promise<{ token: string; expiresAt: Date }>
  */
-export function createToken(
+export async function createToken(
 	sessionId: string,
 	secret: string,
 	ttlSeconds?: number
-): { token: string; expiresAt: Date };
+): Promise<{ token: string; expiresAt: Date }>;
 
 /**
- * Verifies a token's signature and expiration.
- * @param token - the token string from the Authorization header
+ * Verifies a JWT's signature and expiration.
+ * @param token - the JWT string from the Authorization header
  * @param secret - the HMAC signing secret
- * @returns the decoded payload if valid, or null if invalid/expired
+ * @returns Promise containing the decoded payload if valid, or null if invalid/expired
  */
-export function verifyToken(
+export async function verifyToken(
 	token: string,
 	secret: string
-): TokenPayload | null;
+): Promise<TokenPayload | null>;
 ```
 
 **Implementation notes:**
 
-- `createToken` computes `sfp = SHA-256(sessionId)` using `crypto.createHash("sha256")`, builds the payload, signs with `crypto.createHmac("sha256", secret)`, and concatenates as `base64url(payload).base64url(hmac)`.
-- `verifyToken` splits on `.`, recomputes the HMAC over the payload portion, does a timing-safe comparison (`crypto.timingSafeEqual`), then checks `exp > now`.
-- Uses `Buffer.from(str, "base64url")` for encoding/decoding (available in Node 16+, which Vercel uses).
+- `createToken` computes `sfp = SHA-256(sessionId)` using `crypto.createHash("sha256")`, then signs a JWT with `jose.SignJWT` using HS256.
+- `verifyToken` uses `jose.jwtVerify` which handles signature verification (timing-safe internally), expiration checking, and algorithm validation.
+- Both functions are async because `jose` uses the Web Crypto API internally.
 
 ### 3. New server endpoint: `packages/server/api/auth/token.ts`
 
@@ -460,7 +464,7 @@ No changes needed.  The extension already has:
 
 | Variable | Required | Description |
 |---|---|---|
-| `TOKEN_SIGNING_SECRET` | Yes | HMAC-SHA256 signing key. Generate with `openssl rand -hex 32`. Min 32 hex chars. |
+| `TOKEN_SIGNING_SECRET` | Yes | HS256 JWT signing key. Generate with `openssl rand -hex 32`. Min 32 hex chars (64 recommended for 256-bit key). |
 | `TOKEN_TTL_SECONDS` | No | Token lifetime in seconds. Default: `900` (15 minutes). |
 
 ### Unchanged (server)
@@ -541,7 +545,7 @@ The extension's retry-on-401 loop (max 1 retry) ensures transparent recovery whe
    - Rejects a token with a tampered signature
    - Rejects a token signed with a different secret
    - Rejects malformed input (empty string, no dot separator, non-base64)
-   - Uses timing-safe comparison (verify via code review)
+   - Uses timing-safe comparison (handled internally by `jose`)
 
 3. **`api/auth/token.ts`**
    - Returns 200 + token for a valid session

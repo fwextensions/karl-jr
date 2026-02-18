@@ -13,7 +13,8 @@
 	"dependencies": {
 		"@sf-gov/shared": "*",
 		"@upstash/redis": "^1.35.7",
-		"@vercel/node": "^5.5.15"
+		"@vercel/node": "^5.5.15",
+		"jose": "^6.1.3"
 	},
 	"devDependencies": {
 		"@types/node": "^24.10.1",

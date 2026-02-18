@@ -149,7 +149,7 @@ export async function authenticateRequest(
 	const bearerToken = extractBearerToken(req);
 
 	if (bearerToken) {
-		const tokenPayload = verifyToken(bearerToken, tokenSigningSecret);
+		const tokenPayload = await verifyToken(bearerToken, tokenSigningSecret);
 		if (!tokenPayload) {
 			return { ok: false, status: 401, error: "Invalid or expired token" };
 		}

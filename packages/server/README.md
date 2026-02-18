@@ -168,8 +168,8 @@ Set the following environment variables in your Vercel project settings:
 
 ## Architecture
 
-- **Token Exchange** (`/api/auth/token`): Validates Wagtail sessions once and issues short-lived HMAC-signed tokens
-- **Token Validation**: Verifies tokens locally using HMAC-SHA256 signatures (no external calls needed)
+- **Token Exchange** (`/api/auth/token`): Validates Wagtail sessions once and issues short-lived HS256 JWTs
+- **Token Validation**: Verifies JWTs locally using the `jose` library (no external calls needed)
 - **Session Validation**: Validates Wagtail admin sessions by making requests to the Wagtail API (only during token exchange)
 - **Shared Auth** (`lib/auth.ts`): Centralized authentication helpers — `authenticateRequest()` handles token-or-session auth, `handleCors()` handles CORS/preflight/origin validation
 - **Caching**: Uses Upstash Redis to cache feedback data (2 hour TTL)
@@ -211,4 +211,5 @@ vercel dev
 
 - `@vercel/node`: Vercel serverless function runtime
 - `@upstash/redis`: Upstash Redis SDK for caching and rate limiting
+- `jose`: Standards-compliant JWT signing and verification (HS256)
 - `@sf-gov/shared`: Shared TypeScript types
