@@ -10,6 +10,8 @@ import { PreviewBanner } from "./components/PreviewBanner";
 import { FeedbackCard } from "./components/FeedbackCard";
 import { LinksCard } from "./components/LinksCard";
 import { initAnalytics, trackEvent, trackError } from "@/lib/analytics";
+import { A11yCard } from "./components/A11yCard.tsx";
+
 import {
 	extractCategorizedLinks,
 	type CategorizedLinks
@@ -228,6 +230,7 @@ export default function App()
 					categorizedLinks={categorizedLinks}
 					isLoadingLinks={isLoadingLinks}
 				/>
+				<A11yCard pageUrl={currentUrl} images={pageData.images} />
 				{pageData.formConfirmation && (
 					<FormConfirmationCard formConfirmation={pageData.formConfirmation} currentUrl={currentUrl} />
 				)}
