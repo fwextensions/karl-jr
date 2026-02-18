@@ -672,6 +672,9 @@ export function A11yChecker({
 		await navigator.clipboard.writeText(text);
 	};
 
+	const hasHeadingIssues = results.headings.length > 0;
+	const hasImageIssues = results.images.some(info => !info.hasAltText);
+	const hasLinkIssues = results.links.rawUrls.length + results.links.vagueLinks.length + results.links.vagueButtons.length > 0;
 	const hasTables = results.tables && results.tables.totalTables > 0;
 	const hasVideos = results.videos && results.videos.totalVideos > 0;
 
@@ -693,20 +696,26 @@ export function A11yChecker({
 
 			{hasRun && !error && (
 				<div className="space-y-6">
-					<div>
-						<h3 className="text-sm font-semibold text-gray-700 mb-3">Heading nesting</h3>
-						<HeadingNestingResults issues={results.headings} />
-					</div>
+					{hasHeadingIssues && (
+						<div>
+							<h3 className="text-sm font-semibold text-gray-700 mb-3">Heading nesting</h3>
+							<HeadingNestingResults issues={results.headings} />
+						</div>
+					)}
 
-					<div>
-						<h3 className="text-sm font-semibold text-gray-700 mb-3">Image alt text</h3>
-						<ImageAltTextResults results={results.images} apiImages={images} />
-					</div>
+					{hasImageIssues && (
+						<div>
+							<h3 className="text-sm font-semibold text-gray-700 mb-3">Image alt text</h3>
+							<ImageAltTextResults results={results.images} apiImages={images} />
+						</div>
+					)}
 
-					<div>
-						<h3 className="text-sm font-semibold text-gray-700 mb-3">Inaccessible links</h3>
-						<LinkAccessibilityResultsComponent results={results.links} />
-					</div>
+					{hasLinkIssues && (
+						<div>
+							<h3 className="text-sm font-semibold text-gray-700 mb-3">Inaccessible links</h3>
+							<LinkAccessibilityResultsComponent results={results.links} />
+						</div>
+					)}
 
 					{hasTables && (
 						<div>
