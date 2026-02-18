@@ -9,6 +9,7 @@ import { FormConfirmationCard } from "./components/FormConfirmationCard";
 import { PreviewBanner } from "./components/PreviewBanner";
 import { FeedbackCard } from "./components/FeedbackCard";
 import { LinksCard } from "./components/LinksCard";
+import { A11yCard } from "./components/A11yCard.tsx";
 import { initAnalytics, trackEvent, trackError, identifyUser } from "@/lib/analytics";
 import {
 	extractCategorizedLinks,
@@ -237,6 +238,7 @@ export default function App()
 					categorizedLinks={categorizedLinks}
 					isLoadingLinks={isLoadingLinks}
 				/>
+				<A11yCard pageUrl={currentUrl} images={pageData.images} />
 				{pageData.formConfirmation && (
 					<FormConfirmationCard formConfirmation={pageData.formConfirmation} currentUrl={currentUrl} />
 				)}

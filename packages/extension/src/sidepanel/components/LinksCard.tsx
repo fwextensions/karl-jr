@@ -115,7 +115,7 @@ export const LinksCard: React.FC<LinksCardProps> = ({
 	}
 
 	return (
-		<Card title="Link checker" collapsible>
+		<Card title="Broken links" collapsible>
 			<div className="space-y-2 mb-2">
 				{otherFiles.length > 0 &&
 					<LinksList
