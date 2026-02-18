@@ -1,10 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@100..900&family=Roboto:ital,wght@0,100..900;1,100..900&display=swap');
+@import "tailwindcss";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@source "../**/*.{ts,tsx,html}";
 
-:root {
+@theme {
   --font-roboto: "Roboto", system-ui, -apple-system, sans-serif;
   --font-slab: "Roboto Slab", system-ui, -apple-system, serif;
 
