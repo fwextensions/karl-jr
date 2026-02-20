@@ -1,8 +1,6 @@
 // content script for monitoring Wagtail admin preview button
 // injected into api.sf.gov/admin/* pages to detect and track preview URLs
 
-import "@/lib/console.ts";
-
 interface PreviewButtonState {
 	href: string | null;
 	isDisabled: boolean;

@@ -1,16 +1,17 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import type { AirtableResponse, FeedbackRecord, FeedbackResponse, FeedbackStats } from "@sf-gov/shared";
-import { validateWagtailSession } from "../lib/auth.js";
+import { authenticateRequest, handleCors } from "../lib/auth.js";
 
-// cache TTL for feedback data (2 hours in seconds)
+// cache TTL for feedback data (2 hours in seconds).  all users access the same
+// feedback data for a given URL.
 const FEEDBACK_CACHE_TTL = 7200;
-const SESSION_CACHE_TTL = 300;
 
 interface ProxyEnv {
 	WAGTAIL_API_URL: string;
 	AIRTABLE_API_KEY: string;
 	AIRTABLE_BASE_ID: string;
 	AIRTABLE_TABLE_NAME: string;
+	TOKEN_SIGNING_SECRET: string;
 	UPSTASH_REDIS_REST_URL?: string;
 	UPSTASH_REDIS_REST_TOKEN?: string;
 }
@@ -21,11 +22,12 @@ function validateEnv(): ProxyEnv {
 		AIRTABLE_API_KEY: process.env.AIRTABLE_API_KEY,
 		AIRTABLE_BASE_ID: process.env.AIRTABLE_BASE_ID,
 		AIRTABLE_TABLE_NAME: process.env.AIRTABLE_TABLE_NAME,
+		TOKEN_SIGNING_SECRET: process.env.TOKEN_SIGNING_SECRET,
 		UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
 		UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
 	};
 
-	const required = ["WAGTAIL_API_URL", "AIRTABLE_API_KEY", "AIRTABLE_BASE_ID", "AIRTABLE_TABLE_NAME"];
+	const required = ["WAGTAIL_API_URL", "AIRTABLE_API_KEY", "AIRTABLE_BASE_ID", "AIRTABLE_TABLE_NAME", "TOKEN_SIGNING_SECRET"];
 	const missing = required.filter(key => !env[key as keyof ProxyEnv]);
 
 	if (missing.length > 0) {
@@ -86,17 +88,6 @@ async function redisSet(key: string, value: any, url: string, token: string, ttl
 	} catch (error) {
 		console.error(`Redis SET failed for ${key}:`, error);
 	}
-}
-
-function validateOrigin(origin: string | undefined): boolean {
-	if (!origin) return false;
-	if (origin.startsWith("chrome-extension://") || origin.startsWith("edge-extension://")) {
-		return true;
-	}
-	if (origin.includes("localhost") || origin.includes("127.0.0.1")) {
-		return true;
-	}
-	return false;
 }
 
 function normalizePath(path: string): string {
@@ -221,35 +212,19 @@ async function fetchAllAirtableFeedback(
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 	const handlerStart = Date.now();
-	const origin = req.headers.origin as string | undefined;
-	const isValidOrigin = validateOrigin(origin);
 
-	if (isValidOrigin && origin) {
-		res.setHeader("Access-Control-Allow-Origin", origin);
-		res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-		res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Wagtail-Session, X-SF-Gov-Extension");
-		res.setHeader("Access-Control-Max-Age", "86400");
-	}
-
-	if (req.method === "OPTIONS") {
-		return isValidOrigin ? res.status(200).end() : res.status(403).json({ error: "Invalid origin" });
-	}
-
-	if (req.method !== "GET") {
-		return res.status(405).json({ error: "Method not allowed" });
-	}
-
-	if (!isValidOrigin) {
-		return res.status(403).json({ error: "Invalid origin" });
-	}
+	// handle CORS, preflight, method, and origin validation
+	if (handleCors(req, res, "GET")) return;
 
 	try {
 		const env = validateEnv();
 
-		const sessionId = req.headers["x-wagtail-session"] as string | undefined;
-		if (!sessionId) {
-			return res.status(401).json({ error: "Missing session token" });
+		// authenticate via token or legacy session
+		const auth = await authenticateRequest(req, env.TOKEN_SIGNING_SECRET, env.WAGTAIL_API_URL);
+		if (!auth.ok) {
+			return res.status(auth.status).json({ error: auth.error });
 		}
+		const { sessionFingerprint } = auth;
 
 		const pagePath = req.query.pagePath as string | undefined;
 		if (!pagePath) {
@@ -258,39 +233,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 		const normalizedPath = normalizePath(pagePath);
 		const cacheKey = `feedback:${normalizedPath}`;
-		const sessionCacheKey = `session:${sessionId}`;
 
-		// check both caches in parallel
-		let cachedSession: boolean | null = null;
+		// check feedback cache
 		let cachedFeedback: FeedbackResponse | null = null;
-
 		if (env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN) {
-			[cachedSession, cachedFeedback] = await Promise.all([
-				redisGet<boolean>(sessionCacheKey, env.UPSTASH_REDIS_REST_URL, env.UPSTASH_REDIS_REST_TOKEN),
-				redisGet<FeedbackResponse>(cacheKey, env.UPSTASH_REDIS_REST_URL, env.UPSTASH_REDIS_REST_TOKEN)
-			]);
-		}
-
-		// validate session
-		let isValidSession = cachedSession === true;
-		if (cachedSession !== null) {
-			console.log(`Session cache hit for ${sessionId.substring(0, 8)}`);
-		} else {
-			console.log(`Session cache miss for ${sessionId.substring(0, 8)}`);
-			isValidSession = await validateWagtailSession(sessionId, env.WAGTAIL_API_URL);
-			if (isValidSession && env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN) {
-				// don't await - fire and forget
-				redisSet(sessionCacheKey, true, env.UPSTASH_REDIS_REST_URL, env.UPSTASH_REDIS_REST_TOKEN, SESSION_CACHE_TTL);
-			}
-		}
-
-		if (!isValidSession) {
-			return res.status(401).json({ error: "Invalid session" });
+			cachedFeedback = await redisGet<FeedbackResponse>(cacheKey, env.UPSTASH_REDIS_REST_URL, env.UPSTASH_REDIS_REST_TOKEN);
 		}
 
 		// return cached feedback if available
 		if (cachedFeedback) {
-			console.log(`Feedback cache hit for ${normalizedPath} - total handler time: ${Date.now() - handlerStart}ms`);
+			console.log(`Feedback cache hit for ${normalizedPath} (session: ${sessionFingerprint}) - total handler time: ${Date.now() - handlerStart}ms`);
 			return res.status(200).json(cachedFeedback);
 		}
 

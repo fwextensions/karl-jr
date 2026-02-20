@@ -23,6 +23,13 @@ AIRTABLE_BASE_ID=your_airtable_base_id
 AIRTABLE_TABLE_NAME=your_table_name
 ```
 
+**Token Authentication (Required):**
+```bash
+# Generate a secure signing secret with:
+# openssl rand -hex 32
+TOKEN_SIGNING_SECRET=your_64_character_hex_string_here
+```
+
 For Upstash Redis (automatically set by Vercel when connected via Marketplace):
 ```bash
 UPSTASH_REDIS_REST_URL=your_upstash_redis_url
@@ -31,7 +38,7 @@ UPSTASH_REDIS_REST_TOKEN=your_upstash_redis_token
 
 Optional configuration:
 ```bash
-SESSION_CACHE_TTL=300  # cache TTL in seconds (default: 300)
+TOKEN_TTL_SECONDS=900  # token lifetime in seconds (default: 900 = 15 minutes)
 WAGTAIL_VALIDATION_TIMEOUT=5000  # validation timeout in milliseconds (default: 5000)
 ```
 
@@ -57,12 +64,33 @@ npm run type-check --workspace=@sf-gov/server
 
 ## API Endpoints
 
-### GET /api/airtable-proxy
+### POST /api/auth/token
 
-Proxies requests to Airtable with Wagtail session authentication.
+Exchanges a Wagtail session ID for a short-lived companion API token.
 
 **Headers:**
 - `X-Wagtail-Session`: Session cookie value from api.sf.gov
+- `Origin`: Extension origin (chrome-extension://... or edge-extension://...)
+
+**Response:**
+```json
+{
+  "token": "eyJzZn...signature",
+  "expiresAt": "2025-06-15T12:30:00.000Z"
+}
+```
+
+**Error Responses:**
+- `401`: Invalid or missing session
+- `403`: Invalid origin
+- `405`: Method not allowed
+
+### GET /api/feedback
+
+Proxies requests to Airtable with token-based authentication.
+
+**Headers:**
+- `Authorization`: Bearer token from /api/auth/token
 - `Origin`: Extension origin (chrome-extension://... or edge-extension://...)
 
 **Query Parameters:**
@@ -95,11 +123,17 @@ Proxies requests to Airtable with Wagtail session authentication.
 
 ## Testing Locally
 
-You can test the endpoint using curl once the dev server is running:
+You can test the token exchange endpoint using curl once the dev server is running:
 
 ```bash
-curl -X GET "http://localhost:3001/api/airtable-proxy?pagePath=/services/housing" \
+# First, exchange your Wagtail session for a token
+curl -X POST "http://localhost:3000/api/auth/token" \
   -H "X-Wagtail-Session: your_session_cookie" \
+  -H "Origin: http://localhost:5173"
+
+# Then use the token to access the feedback endpoint
+curl -X GET "http://localhost:3000/api/feedback?pagePath=/services/housing" \
+  -H "Authorization: Bearer your_token_here" \
   -H "Origin: http://localhost:5173"
 ```
 
@@ -118,6 +152,7 @@ Or from the Vercel dashboard, connect your GitHub repository and Vercel will aut
 Set the following environment variables in your Vercel project settings:
 
 **Required:**
+- `TOKEN_SIGNING_SECRET` - Generate with `openssl rand -hex 32`
 - `WAGTAIL_API_URL`
 - `AIRTABLE_API_KEY`
 - `AIRTABLE_BASE_ID`
@@ -128,19 +163,21 @@ Set the following environment variables in your Vercel project settings:
 - `UPSTASH_REDIS_REST_TOKEN`
 
 **Optional (with defaults):**
-- `SESSION_CACHE_TTL` (default: 300 seconds)
+- `TOKEN_TTL_SECONDS` (default: 900 seconds = 15 minutes)
 - `WAGTAIL_VALIDATION_TIMEOUT` (default: 5000 milliseconds)
 
 ## Architecture
 
-- **Session Validation**: Validates Wagtail admin sessions by making requests to the Wagtail API
-- **Caching**: Uses Upstash Redis to cache session validation results (5-minute TTL, configurable via `SESSION_CACHE_TTL`)
-- **Rate Limiting**: Limits requests to 10 per 10 seconds per session using Upstash Redis
-- **Security**: Validates origin headers, never exposes Airtable API key to clients
+- **Token Exchange** (`/api/auth/token`): Validates Wagtail sessions once and issues short-lived HS256 JWTs
+- **Token Validation**: Verifies JWTs locally using the `jose` library (no external calls needed)
+- **Session Validation**: Validates Wagtail admin sessions by making requests to the Wagtail API (only during token exchange)
+- **Shared Auth** (`lib/auth.ts`): Centralized authentication helpers — `authenticateRequest()` handles token-or-session auth, `handleCors()` handles CORS/preflight/origin validation
+- **Caching**: Uses Upstash Redis to cache feedback data (2 hour TTL)
+- **Security**: Validates origin headers (extension and localhost only), tokens contain a SHA-256 session fingerprint (not the raw session ID)
 
 ## Upstash Redis Setup
 
-The API uses Upstash Redis for session caching and rate limiting. To set up Upstash Redis:
+The API uses Upstash Redis for caching feedback data from Airtable. To set up Upstash Redis:
 
 ### Production (Vercel)
 
@@ -174,4 +211,5 @@ vercel dev
 
 - `@vercel/node`: Vercel serverless function runtime
 - `@upstash/redis`: Upstash Redis SDK for caching and rate limiting
+- `jose`: Standards-compliant JWT signing and verification (HS256)
 - `@sf-gov/shared`: Shared TypeScript types

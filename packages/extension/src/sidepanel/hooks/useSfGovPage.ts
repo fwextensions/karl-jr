@@ -15,11 +15,6 @@ import { trackEvent } from "@/lib/analytics";
 const CACHE_TTL = 5 * 60 * 1000;
 
 /**
- * Debounce delay in milliseconds
- */
-const DEBOUNCE_DELAY = 300;
-
-/**
  * Interface for tracking the current tab state
  */
 interface TabState {
@@ -358,24 +353,26 @@ export function useSfGovPage(): UseSfGovPageReturn {
 	}, [previewUrl]);
 
 	/**
-	 * Debounced function to fetch page data
-	 * @param slug - The page slug to fetch data for
-	 * @param url - The current URL to help determine the correct locale
-	 * @param previewMode - Whether to use preview mode
-	 * @param timestamp - Preview timestamp
+	 * Requests page data from the content script on the active tab
 	 */
-	const debouncedFetchPageData = useCallback((slug: string, url: string, previewMode: boolean = false, timestamp: number = 0) => {
-		// Clear existing timer if present
-		if (debounceTimerRef.current !== null) {
-			clearTimeout(debounceTimerRef.current);
+	const requestPageDataFromContentScript = useCallback(async (): Promise<void> => {
+		try {
+			const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+			if (tabs.length === 0 || !tabs[0] || !tabs[0].id) {
+				console.warn("No active tab available for page data request");
+				return;
+			}
+
+			try {
+				console.log("Requesting page data from content script");
+				await chrome.tabs.sendMessage(tabs[0].id, { type: "REQUEST_PAGE_DATA" });
+			} catch (err) {
+				console.log("Could not request page data (content script may not be ready):", err);
+			}
+		} catch (err) {
+			console.error("Error querying tabs for page data request:", err);
 		}
-		
-		// Set new timer
-		debounceTimerRef.current = window.setTimeout(() => {
-			debounceTimerRef.current = null;
-			fetchPageData(slug, url, previewMode, timestamp);
-		}, DEBOUNCE_DELAY);
-	}, [fetchPageData]);
+	}, []);
 
 	/**
 	 * Handles tab update events by checking URL and fetching data if needed
@@ -461,15 +458,16 @@ export function useSfGovPage(): UseSfGovPageReturn {
 		}
 		
 		if (isAdminPage && pageId) {
-			// On Wagtail admin edit page - fetch data by page ID
+			// On Wagtail admin edit page - fetch data by page ID (skip DOM extraction)
 			console.log("On Wagtail admin edit page with ID:", pageId);
 			fetchPageDataById(pageId);
 			
 			requestPreviewState();
 		} else if (onSfGov && slug) {
-			// On SF.gov with valid slug - fetch data with debouncing
-			console.log("On SF.gov page with slug:", slug);
-			debouncedFetchPageData(slug, url);
+			// On SF.gov with valid slug - request DOM extraction from content script
+			console.log("On SF.gov page with slug:", slug, "- requesting DOM extraction");
+			setIsLoading(true);
+			requestPageDataFromContentScript();
 		} else if (!onSfGov) {
 			// Only clear state if we've actually left SF.gov
 			console.log("Left SF.gov domain, clearing state");
@@ -484,7 +482,7 @@ export function useSfGovPage(): UseSfGovPageReturn {
 			setPageData(null);
 			setError(null);
 		}
-	}, [debouncedFetchPageData, fetchPageDataById, previewUrl, isPreviewMode, requestPreviewState]);
+	}, [fetchPageDataById, previewUrl, isPreviewMode, requestPreviewState, requestPageDataFromContentScript]);
 
 	/**
 	 * Retry function that clears cache and refetches data
@@ -619,6 +617,75 @@ export function useSfGovPage(): UseSfGovPageReturn {
 			console.log("Preview message listener removed");
 		};
 	}, [fetchPageData, fetchPageDataById, isPreviewMode]);
+
+	/**
+	 * Set up DOM extraction message listener
+	 */
+	useEffect(() => {
+		/**
+		 * Handler for DOM extraction messages from content script
+		 */
+		const onMessage = (
+			message: any,
+			_sender: chrome.runtime.MessageSender,
+			_sendResponse: (response?: any) => void
+		) => {
+			// Handle PAGE_DATA_EXTRACTED messages
+			if (message.type === "PAGE_DATA_EXTRACTED" && message.data && message.timestamp) {
+				const messageAge = Date.now() - message.timestamp;
+				
+				// Ignore stale messages (older than 5 seconds)
+				if (messageAge > 5000) {
+					console.log("Ignoring stale PAGE_DATA_EXTRACTED message:", { messageAge, timestamp: message.timestamp });
+					return;
+				}
+				
+				console.log("Received PAGE_DATA_EXTRACTED:", { pageId: message.data.id, timestamp: message.timestamp });
+				
+				// Set page data directly from the message
+				setPageData(message.data);
+				setError(null);
+				setIsLoading(false);
+				
+				// Save last valid state for persistence
+				if (currentTabStateRef.current && message.data) {
+					lastValidStateRef.current = {
+						url: currentTabStateRef.current.url,
+						pageData: message.data
+					};
+				}
+			}
+			
+			// Handle PAGE_DATA_EXTRACTION_FAILED messages
+			if (message.type === "PAGE_DATA_EXTRACTION_FAILED" && message.timestamp) {
+				const messageAge = Date.now() - message.timestamp;
+				
+				// Ignore stale messages (older than 5 seconds)
+				if (messageAge > 5000) {
+					console.log("Ignoring stale PAGE_DATA_EXTRACTION_FAILED message:", { messageAge, timestamp: message.timestamp });
+					return;
+				}
+				
+				console.log("Received PAGE_DATA_EXTRACTION_FAILED, falling back to API:", { reason: message.reason, timestamp: message.timestamp });
+				
+				// Fall back to API fetch
+				if (currentTabStateRef.current && currentTabStateRef.current.slug) {
+					const { slug, url } = currentTabStateRef.current;
+					fetchPageData(slug, url);
+				}
+			}
+		};
+		
+		// Register listener
+		chrome.runtime.onMessage.addListener(onMessage);
+		console.log("DOM extraction message listener registered");
+		
+		// Cleanup function
+		return () => {
+			chrome.runtime.onMessage.removeListener(onMessage);
+			console.log("DOM extraction message listener removed");
+		};
+	}, [fetchPageData]);
 
 	/**
 	 * Set up Chrome tab event listeners

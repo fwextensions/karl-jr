@@ -5,7 +5,7 @@ import type {
 	LinkCheckCompleteEvent,
 	LinkCheckErrorEvent,
 } from "@sf-gov/shared";
-import { validateWagtailSession } from "../lib/auth.js";
+import { authenticateRequest, handleCors } from "../lib/auth.js";
 import {
 	logAuthFailure,
 	logLinkCheckError,
@@ -28,29 +28,24 @@ import {
 
 interface LinkCheckEnv {
 	WAGTAIL_API_URL: string;
+	TOKEN_SIGNING_SECRET: string;
 }
 
 function validateEnv(): LinkCheckEnv {
 	const env = {
 		WAGTAIL_API_URL: process.env.WAGTAIL_API_URL,
+		TOKEN_SIGNING_SECRET: process.env.TOKEN_SIGNING_SECRET,
 	};
 
 	if (!env.WAGTAIL_API_URL) {
 		throw new Error("Missing required environment variable: WAGTAIL_API_URL");
 	}
 
-	return env as LinkCheckEnv;
-}
+	if (!env.TOKEN_SIGNING_SECRET) {
+		throw new Error("Missing required environment variable: TOKEN_SIGNING_SECRET");
+	}
 
-function validateOrigin(origin: string | undefined): boolean {
-	if (!origin) return false;
-	if (origin.startsWith("chrome-extension://") || origin.startsWith("edge-extension://")) {
-		return true;
-	}
-	if (origin.includes("localhost") || origin.includes("127.0.0.1")) {
-		return true;
-	}
-	return false;
+	return env as LinkCheckEnv;
 }
 
 /**
@@ -718,91 +713,25 @@ function validateRequestPayload(body: unknown): ValidationResult {
 	};
 }
 
-/**
- * Extracts the Wagtail session ID from request cookies
- * Requirements: 2.1, 2.5
- * 
- * @param req - The Vercel request object
- * @returns The session ID or null if not found
- */
-function extractWagtailSessionId(req: VercelRequest): string | null {
-	// check for X-Wagtail-Session header first (sent by extension)
-	const sessionHeader = req.headers["x-wagtail-session"] as string | undefined;
-	if (sessionHeader) {
-		return sessionHeader;
-	}
-
-	// fallback to cookie header
-	const cookieHeader = req.headers.cookie;
-	if (!cookieHeader) {
-		return null;
-	}
-
-	// parse cookies to find sessionid
-	const cookies = cookieHeader.split(";").map(c => c.trim());
-	for (const cookie of cookies) {
-		const [name, value] = cookie.split("=");
-		if (name === "sessionid" && value) {
-			return value;
-		}
-	}
-
-	return null;
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 	// generate request ID for logging context
 	const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
-	// handle CORS
-	const origin = req.headers.origin as string | undefined;
-	const isValidOrigin = validateOrigin(origin);
-
-	if (isValidOrigin && origin) {
-		res.setHeader("Access-Control-Allow-Origin", origin);
-		res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-		res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Wagtail-Session, X-SF-Gov-Extension");
-		res.setHeader("Access-Control-Max-Age", "86400");
-	}
-
-	// handle preflight request
-	if (req.method === "OPTIONS") {
-		return isValidOrigin ? res.status(200).end() : res.status(403).json({ error: "Invalid origin" });
-	}
-
-	// check HTTP method is POST
-	// Requirement: 2.5
-	if (req.method !== "POST") {
-		return res.status(405).json({ error: "Method not allowed" });
-	}
-
-	if (!isValidOrigin) {
-		return res.status(403).json({ error: "Invalid origin" });
-	}
+	// handle CORS, preflight, method, and origin validation
+	if (handleCors(req, res, "POST")) return;
 
 	try {
 		// validate environment variables
 		const env = validateEnv();
 
-		// extract and validate Wagtail session cookies
-		// Requirements: 2.1, 2.5
-		const sessionId = extractWagtailSessionId(req);
-		if (!sessionId) {
-			// log authentication failure
-			// Requirement: 6.4
-			logAuthFailure("Missing Wagtail session", { requestId });
-			return res.status(401).json({ error: "Unauthorized: Missing Wagtail session" });
+		// authenticate via token or legacy session
+		// Requirements: 5.1, 5.2, 5.3, 8.3, 8.4
+		const auth = await authenticateRequest(req, env.TOKEN_SIGNING_SECRET, env.WAGTAIL_API_URL);
+		if (!auth.ok) {
+			logAuthFailure(auth.error, { requestId });
+			return res.status(auth.status).json({ error: `Unauthorized: ${auth.error}` });
 		}
-
-		// validate Wagtail session
-		// Requirements: 2.2, 2.3, 2.4
-		const isValidSession = await validateWagtailSession(sessionId, env.WAGTAIL_API_URL);
-		if (!isValidSession) {
-			// log authentication failure
-			// Requirement: 6.4
-			logAuthFailure("Invalid Wagtail session", { requestId, sessionId: sessionId.substring(0, 8) + "..." });
-			return res.status(401).json({ error: "Unauthorized: Invalid Wagtail session" });
-		}
+		const { sessionFingerprint } = auth;
 
 		// validate request payload
 		// Requirements: 1.2, 1.4, 1.5, 3.3
@@ -825,6 +754,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 			requestId,
 			total: request.urls.length,
 			pageUrl: request.pageUrl,
+			sessionFingerprint: sessionFingerprint?.substring(0, 8),
 		});
 
 		// open SSE stream

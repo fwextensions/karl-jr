@@ -3,7 +3,11 @@
     "allow": [
       "Bash(npm install:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(npm run type-check)",
+      "Bash(npm test)",
+      "Bash(npm run build)",
+      "Bash(git push)"
     ]
   }
 }
