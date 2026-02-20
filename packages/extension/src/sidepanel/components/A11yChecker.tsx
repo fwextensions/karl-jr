@@ -379,7 +379,7 @@ const ReadabilityScoreResults = ({ result, onCopyText }: { result: ReadabilitySc
 	return (
 		<div className="space-y-3">
 			{showCopyNotification && (
-				<div className="p-4 bg-blue-50 border-2 border-blue-400 rounded-lg relative">
+				<div className="p-4 bg-blue-50 border-2 border-blue-400 rounded relative">
 					<button
 						onClick={() => setShowCopyNotification(false)}
 						className="absolute top-2 right-2 text-blue-600 hover:text-blue-800 font-bold text-lg leading-none"
@@ -463,10 +463,9 @@ const ReadabilityScoreResults = ({ result, onCopyText }: { result: ReadabilitySc
 				</div>
 
 				{result.hasContent && (
-					<div className="pt-2 border-t border-gray-200 space-y-2">
+					<div className="pt-4 border-t border-gray-200 space-y-2">
 						<Button
 							onClick={handleCompareWithHemingway}
-							className="text-xs px-3 py-1"
 						>
 							Get help in Hemingway App
 						</Button>

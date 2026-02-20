@@ -2,13 +2,14 @@ import { defineManifest } from "@crxjs/vite-plugin";
 import pkg from "./package.json";
 
 export default defineManifest(({ mode }) => {
+	const { version } = pkg;
 	const isDev = mode === "development";
-	const name = isDev ? "Karl Jr. DEV" : "Karl Jr.";
+	const name = isDev ? `Karl Jr. DEV ${version}` : "Karl Jr.";
 
 	return {
 		manifest_version: 3,
 		name,
-		version: pkg.version,
+		version,
 		description: "Browser extension that provides information about SF.gov pages, with links to the Karl CMS for editing",
 		icons: {
 			"16": "src/img/favicon-16.png",
