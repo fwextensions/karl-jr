@@ -11,6 +11,7 @@ export interface MediaAsset {
   url: string;
   type: 'image' | 'document';
   filename?: string;
+  altText?: string;
 }
 
 /**

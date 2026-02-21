@@ -87,6 +87,7 @@ export default function App()
 	// extract categorized links from page content once, shared by MediaAssetsCard and LinksCard
 	const [categorizedLinks, setCategorizedLinks] = useState<CategorizedLinks | null>(null);
 	const [isLoadingLinks, setIsLoadingLinks] = useState(true);
+	const [missingAltTextUrls, setMissingAltTextUrls] = useState<Set<string>>(new Set());
 
 	useEffect(() => {
 		if (!pageData) {
@@ -224,13 +225,14 @@ export default function App()
 					files={pageData.files}
 					categorizedLinks={categorizedLinks}
 					isLoadingLinks={isLoadingLinks}
+					missingAltTextUrls={missingAltTextUrls}
 				/>
 				<LinksCard
 					pageUrl={currentUrl}
 					categorizedLinks={categorizedLinks}
 					isLoadingLinks={isLoadingLinks}
 				/>
-				<A11yCard pageUrl={currentUrl} images={pageData.images} />
+				<A11yCard pageUrl={currentUrl} images={pageData.images} onMissingAltTextUrls={setMissingAltTextUrls} />
 				{pageData.formConfirmation && (
 					<FormConfirmationCard formConfirmation={pageData.formConfirmation} currentUrl={currentUrl} />
 				)}

@@ -67,16 +67,16 @@ This implementation replaces session-based authentication with a token exchange 
 		- Return TokenResponse with token and expiresAt
 		- _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 	
-	- [~] 4.2 Write property test for token exchange with valid sessions
+	- [ ] 4.2 Write property test for token exchange with valid sessions
 		- **Property 8: Token exchange returns valid tokens for valid sessions**
 		- **Validates: Requirements 3.2**
 	
-	- [~] 4.3 Write property test for token exchange rejection
+	- [ ] 4.3 Write property test for token exchange rejection
 		- **Property 9: Token exchange rejects invalid sessions**
 		- **Property 10: Token exchange validates origins**
 		- **Validates: Requirements 3.3, 3.4**
 	
-	- [~] 4.4 Write unit tests for token exchange endpoint
+	- [ ] 4.4 Write unit tests for token exchange endpoint
 		- Test GET/PUT/DELETE method rejection (405)
 		- Test missing X-Wagtail-Session header (401)
 		- Test invalid origin (403)
@@ -102,12 +102,12 @@ This implementation replaces session-based authentication with a token exchange 
 		- Add TOKEN_SIGNING_SECRET to ProxyEnv interface
 		- _Requirements: 4.1, 4.2, 4.3, 4.6, 8.1, 8.2, 8.5_
 	
-	- [~] 6.2 Write property test for feedback endpoint auth
+	- [ ] 6.2 Write property test for feedback endpoint auth
 		- **Property 11: Endpoints reject malformed authorization headers**
 		- **Property 12: Endpoints reject invalid tokens**
 		- **Validates: Requirements 4.2, 4.3**
 	
-	- [~] 6.3 Write unit tests for feedback endpoint backward compatibility
+	- [ ] 6.3 Write unit tests for feedback endpoint backward compatibility
 		- Test Authorization header takes precedence
 		- Test fallback to X-Wagtail-Session when no Authorization
 		- Test CORS headers include both auth methods
@@ -124,13 +124,13 @@ This implementation replaces session-based authentication with a token exchange 
 		- Add TOKEN_SIGNING_SECRET to env validation
 		- _Requirements: 5.1, 5.2, 5.3, 5.5, 8.3, 8.4_
 	
-	- [~] 7.2 Write unit tests for link check endpoint backward compatibility
+	- [ ] 7.2 Write unit tests for link check endpoint backward compatibility
 		- Test Authorization header takes precedence
 		- Test fallback to X-Wagtail-Session when no Authorization
 		- Test SSE streaming still works with token auth
 		- _Requirements: 8.3, 8.4_
 
-- [~] 8. Checkpoint - Ensure server tests pass and deploy
+- [ ] 8. Checkpoint - Ensure server tests pass and deploy
 	- Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 9. Implement extension auth module
@@ -145,12 +145,12 @@ This implementation replaces session-based authentication with a token exchange 
 		- Move getWagtailSessionId() from airtable-client.ts
 		- _Requirements: 6.1, 6.2, 6.3, 6.5, 6.6_
 	
-	- [~] 9.2 Write property test for extension token caching
+	- [ ] 9.2 Write property test for extension token caching
 		- **Property 13: Extension caches valid tokens**
 		- **Property 14: Extension refreshes near-expired tokens**
 		- **Validates: Requirements 6.1, 6.2, 6.3**
 	
-	- [~] 9.3 Write unit tests for auth module error handling
+	- [ ] 9.3 Write unit tests for auth module error handling
 		- Test no session cookie error message
 		- Test 401 from exchange error message
 		- Test 500 from exchange error message
@@ -169,11 +169,11 @@ This implementation replaces session-based authentication with a token exchange 
 		- Throw auth error if retry also fails
 		- _Requirements: 6.4, 9.5_
 	
-	- [~] 10.2 Write property test for retry logic
+	- [ ] 10.2 Write property test for retry logic
 		- **Property 15: Extension retries on 401**
 		- **Validates: Requirements 6.4**
 	
-	- [~] 10.3 Write unit tests for airtable client retry
+	- [ ] 10.3 Write unit tests for airtable client retry
 		- Test 401 on first attempt triggers retry
 		- Test 401 on both attempts propagates error
 		- Test token refresh during long-running operations
@@ -188,29 +188,29 @@ This implementation replaces session-based authentication with a token exchange 
 		- Add retry-on-401 logic in startCheck method
 		- _Requirements: 6.4, 9.5_
 	
-	- [~] 11.2 Write unit tests for link check client retry
+	- [ ] 11.2 Write unit tests for link check client retry
 		- Test retry logic with 401 responses
 		- Test SSE streaming continues after token refresh
 		- _Requirements: 6.4_
 
 - [ ] 12. Add environment variable configuration
-	- [~] 12.1 Update server environment validation
+	- [ ] 12.1 Update server environment validation
 		- Add TOKEN_SIGNING_SECRET to required env vars
 		- Add TOKEN_TTL_SECONDS to optional env vars with default 900
 		- Update validateEnv in feedback.ts and link-check.ts
 		- _Requirements: 7.3, 7.4_
 	
-	- [~] 12.2 Write property test for TTL configuration
+	- [ ] 12.2 Write property test for TTL configuration
 		- **Property 16: Token TTL respects configuration**
 		- **Property 17: Different secrets produce incompatible tokens**
 		- **Validates: Requirements 7.1, 7.4**
 	
-	- [~] 12.3 Write unit tests for environment validation
+	- [ ] 12.3 Write unit tests for environment validation
 		- Test server fails to start with missing TOKEN_SIGNING_SECRET
 		- Test default TTL of 900 seconds when TOKEN_TTL_SECONDS not set
 		- _Requirements: 7.2, 7.3_
 
-- [~] 13. Checkpoint - Ensure all tests pass
+- [ ] 13. Checkpoint - Ensure all tests pass
 	- Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 14. Integration and documentation
@@ -220,7 +220,7 @@ This implementation replaces session-based authentication with a token exchange 
 		- Update deployment guide with migration phases
 		- _Requirements: 7.1, 7.3_
 	
-	- [~] 14.2 Write integration tests
+	- [ ] 14.2 Write integration tests
 		- Test end-to-end token exchange flow
 		- Test feedback endpoint with token auth
 		- Test link check endpoint with token auth
@@ -229,7 +229,7 @@ This implementation replaces session-based authentication with a token exchange 
 		- Test multiple tabs sharing token cache
 		- _Requirements: 6.1, 6.2, 6.3, 6.4, 6.6_
 
-- [~] 15. Final checkpoint - Verify all functionality
+- [ ] 15. Final checkpoint - Verify all functionality
 	- Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

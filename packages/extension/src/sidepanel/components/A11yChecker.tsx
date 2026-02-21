@@ -239,6 +239,18 @@ const LinkAccessibilityResultsComponent = ({ results }: { results: LinkAccessibi
 };
 
 const TableAccessibilityResultsComponent = ({ results }: { results: TableAccessibilityResults }) => {
+	if (!results) {
+		return null;
+	}
+	
+	if (results.totalTables === 0) {
+		return (
+			<div className="p-3 bg-gray-50 text-gray-600 text-sm rounded border border-gray-100">
+				There are no tables on this page.
+			</div>
+		);
+	}
+	
 	if (results.issues.length === 0) {
 		return <PassMessage>All tables are accessible!</PassMessage>;
 	}
@@ -281,6 +293,18 @@ const TableAccessibilityResultsComponent = ({ results }: { results: TableAccessi
 };
 
 const VideoAccessibilityResultsComponent = ({ results }: { results: VideoAccessibilityResults }) => {
+	if (!results) {
+		return null;
+	}
+	
+	if (results.totalVideos === 0) {
+		return (
+			<div className="p-3 bg-gray-50 text-gray-600 text-sm rounded border border-gray-100">
+				There are no videos on this page.
+			</div>
+		);
+	}
+	
 	if (results.issues.length === 0) {
 		return <PassMessage>All videos are accessible!</PassMessage>;
 	}
@@ -573,6 +597,7 @@ interface A11yCheckerProps {
 	onCheckStart?: () => void;
 	onCheckComplete?: () => void;
 	onCheckError?: (error: string) => void;
+	onMissingAltTextUrls?: (urls: Set<string>) => void;
 }
 
 export function A11yChecker({
@@ -582,6 +607,7 @@ export function A11yChecker({
 	onCheckStart,
 	onCheckComplete,
 	onCheckError,
+	onMissingAltTextUrls,
 }: A11yCheckerProps) {
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -592,6 +618,7 @@ export function A11yChecker({
 	useEffect(() => {
 		setResults(emptyResults);
 		setError(null);
+		onMissingAltTextUrls?.(new Set());
 	}, [pageUrl]);
 
 	const handleRunCheck = async () => {
@@ -639,6 +666,16 @@ export function A11yChecker({
 				readability: readability ?? null,
 			});
 
+			// notify parent of which image URLs are missing alt text
+			if (onMissingAltTextUrls) {
+				const missingUrls = new Set(
+					(altText ?? [])
+						.filter(info => !info.hasAltText)
+						.map(info => info.url)
+				);
+				onMissingAltTextUrls(missingUrls);
+			}
+
 			setHasRun(true);
 			setIsLoading(false);
 			onCheckComplete?.();
@@ -671,11 +708,11 @@ export function A11yChecker({
 		await navigator.clipboard.writeText(text);
 	};
 
-	const hasHeadingIssues = results.headings.length > 0;
-	const hasImageIssues = results.images.some(info => !info.hasAltText);
-	const hasLinkIssues = results.links.rawUrls.length + results.links.vagueLinks.length + results.links.vagueButtons.length > 0;
-	const hasTables = results.tables && results.tables.totalTables > 0;
-	const hasVideos = results.videos && results.videos.totalVideos > 0;
+//	const hasHeadingIssues = results.headings.length > 0;
+//	const hasImageIssues = results.images.some(info => !info.hasAltText);
+//	const hasLinkIssues = results.links.rawUrls.length + results.links.vagueLinks.length + results.links.vagueButtons.length > 0;
+//	const hasTables = results.tables && results.tables.totalTables > 0;
+//	const hasVideos = results.videos && results.videos.totalVideos > 0;
 
 	return (
 		<div className="space-y-4">
@@ -695,40 +732,40 @@ export function A11yChecker({
 
 			{hasRun && !error && (
 				<div className="space-y-6">
-					{hasHeadingIssues && (
+					{/*{hasHeadingIssues && (*/}
 						<div>
 							<h3 className="text-sm font-semibold text-gray-700 mb-3">Heading nesting</h3>
 							<HeadingNestingResults issues={results.headings} />
 						</div>
-					)}
+					{/*)}*/}
 
-					{hasImageIssues && (
+					{/*{hasImageIssues && (*/}
 						<div>
 							<h3 className="text-sm font-semibold text-gray-700 mb-3">Image alt text</h3>
 							<ImageAltTextResults results={results.images} apiImages={images} />
 						</div>
-					)}
+					{/*)}*/}
 
-					{hasLinkIssues && (
+					{/*{hasLinkIssues && (*/}
 						<div>
 							<h3 className="text-sm font-semibold text-gray-700 mb-3">Inaccessible links</h3>
 							<LinkAccessibilityResultsComponent results={results.links} />
 						</div>
-					)}
+					{/*)}*/}
 
-					{hasTables && (
+					{/*{hasTables && (*/}
 						<div>
 							<h3 className="text-sm font-semibold text-gray-700 mb-3">Table accessibility</h3>
 							<TableAccessibilityResultsComponent results={results.tables!} />
 						</div>
-					)}
+					{/*)}*/}
 
-					{hasVideos && (
+					{/*{hasVideos && (*/}
 						<div>
 							<h3 className="text-sm font-semibold text-gray-700 mb-3">Video accessibility</h3>
 							<VideoAccessibilityResultsComponent results={results.videos!} />
 						</div>
-					)}
+					{/*)}*/}
 
 					{results.readability && (
 						<div>

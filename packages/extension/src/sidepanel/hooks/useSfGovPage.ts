@@ -354,6 +354,7 @@ export function useSfGovPage(): UseSfGovPageReturn {
 
 	/**
 	 * Requests page data from the content script on the active tab
+	 * Falls back to API if content script is not ready
 	 */
 	const requestPageDataFromContentScript = useCallback(async (): Promise<void> => {
 		try {
@@ -368,11 +369,18 @@ export function useSfGovPage(): UseSfGovPageReturn {
 				await chrome.tabs.sendMessage(tabs[0].id, { type: "REQUEST_PAGE_DATA" });
 			} catch (err) {
 				console.log("Could not request page data (content script may not be ready):", err);
+				
+				// fall back to API if content script is not ready
+				if (currentTabStateRef.current && currentTabStateRef.current.slug) {
+					console.log("Falling back to API for slug:", currentTabStateRef.current.slug);
+					const { slug, url } = currentTabStateRef.current;
+					fetchPageData(slug, url);
+				}
 			}
 		} catch (err) {
 			console.error("Error querying tabs for page data request:", err);
 		}
-	}, []);
+	}, [fetchPageData]);
 
 	/**
 	 * Handles tab update events by checking URL and fetching data if needed
