@@ -22,13 +22,15 @@ interface MediaAssetsCardProps {
 	files: MediaAsset[];
 	categorizedLinks: CategorizedLinks | null;
 	isLoadingLinks: boolean;
+	missingAltTextUrls?: Set<string>;
 }
 
 export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 	images,
 	files,
 	categorizedLinks,
-	isLoadingLinks
+	isLoadingLinks,
+	missingAltTextUrls,
 }) => {
 	const hasImages = images.length > 0;
 	const hasFiles = files.length > 0;
@@ -120,6 +122,7 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 						<ul className="w-full space-y-2">
 							{images.map((image) => {
 								const filename = getFilenameFromUrl(image.url);
+								const missingAltText = missingAltTextUrls?.has(image.url) ?? false;
 								return (
 									<li key={image.id} className="flex items-center gap-2">
 										<a
@@ -131,6 +134,9 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 											<EditIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
 											{image.title || image.filename || "Untitled Image"}
 										</a>
+										{missingAltText && (
+											<span className="text-amber-600 shrink-0" title="Missing alt text">⚠️</span>
+										)}
 										<a
 											href={image.url}
 											target="_blank"

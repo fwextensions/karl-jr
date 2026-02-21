@@ -328,7 +328,8 @@ function extractImages(pageData: any): MediaAsset[] {
           title: imageData.title || imageData.alt || '',
           url: imageData.url || imageData.full_url || imageData.meta?.download_url || imageData.src || '',
           type: 'image',
-          filename: imageData.filename
+          filename: imageData.filename,
+          altText: imageData.alt || ''
         });
       }
     }
@@ -343,7 +344,8 @@ function extractImages(pageData: any): MediaAsset[] {
           title: obj.image.title || obj.image.alt || '',
           url: obj.image.url || obj.image.full_url || obj.image.meta?.download_url || obj.image.src || '',
           type: 'image',
-          filename: obj.image.filename
+          filename: obj.image.filename,
+          altText: obj.image.alt || ''
         });
       }
     }

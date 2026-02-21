@@ -10,6 +10,8 @@ import { PreviewBanner } from "./components/PreviewBanner";
 import { FeedbackCard } from "./components/FeedbackCard";
 import { LinksCard } from "./components/LinksCard";
 import { initAnalytics, trackEvent, trackError } from "@/lib/analytics";
+import { A11yCard } from "./components/A11yCard.tsx";
+
 import {
 	extractCategorizedLinks,
 	type CategorizedLinks
@@ -85,6 +87,7 @@ export default function App()
 	// extract categorized links from page content once, shared by MediaAssetsCard and LinksCard
 	const [categorizedLinks, setCategorizedLinks] = useState<CategorizedLinks | null>(null);
 	const [isLoadingLinks, setIsLoadingLinks] = useState(true);
+	const [missingAltTextUrls, setMissingAltTextUrls] = useState<Set<string>>(new Set());
 
 	useEffect(() => {
 		if (!pageData) {
@@ -222,12 +225,14 @@ export default function App()
 					files={pageData.files}
 					categorizedLinks={categorizedLinks}
 					isLoadingLinks={isLoadingLinks}
+					missingAltTextUrls={missingAltTextUrls}
 				/>
 				<LinksCard
 					pageUrl={currentUrl}
 					categorizedLinks={categorizedLinks}
 					isLoadingLinks={isLoadingLinks}
 				/>
+				<A11yCard pageUrl={currentUrl} images={pageData.images} onMissingAltTextUrls={setMissingAltTextUrls} />
 				{pageData.formConfirmation && (
 					<FormConfirmationCard formConfirmation={pageData.formConfirmation} currentUrl={currentUrl} />
 				)}
