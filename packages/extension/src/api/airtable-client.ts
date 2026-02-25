@@ -184,6 +184,13 @@ export async function getFeedback(path: string): Promise<FeedbackResponse> {
 				if (error instanceof TypeError) {
 					throw createApiError("network", "Unable to connect to API. Check your network connection.");
 				}
+				if (error instanceof Error && (
+					error.message.includes("Not authenticated") ||
+					error.message.includes("Invalid or expired session") ||
+					error.message.includes("Access denied")
+				)) {
+					throw createApiError("auth", error.message);
+				}
 				throw createApiError("network", "An unexpected error occurred");
 			}
 		}
