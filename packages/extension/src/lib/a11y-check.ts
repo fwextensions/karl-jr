@@ -979,11 +979,24 @@ export function calculateReadabilityScore(): ReadabilityScore {
  * this function runs in the page context via chrome.scripting.executeScript
  */
 export function extractPageText(): string {
-	const shouldExclude = (el: Element): boolean => {
-		const excludedTags = ["header", "footer", "nav", "form", "code", "pre", "script", "style", "button", "input", "select", "textarea"];
-		const tagName = el.tagName.toLowerCase();
+	// block-level elements that should be separated by line breaks
+	const blockTags = new Set([
+		"h1", "h2", "h3", "h4", "h5", "h6",
+		"p", "div", "section", "article",
+		"blockquote", "ul", "ol", "li",
+		"table", "tr", "td", "th",
+		"figure", "figcaption", "details", "summary",
+		"address", "dd", "dt", "dl"
+	]);
 
-		if (excludedTags.includes(tagName)) return true;
+	const excludedTags = new Set([
+		"header", "footer", "nav", "form", "code", "pre",
+		"script", "style", "button", "input", "select", "textarea"
+	]);
+
+	const shouldExclude = (el: Element): boolean => {
+		const tagName = el.tagName.toLowerCase();
+		if (excludedTags.has(tagName)) return true;
 		if (el.closest("header, footer, nav, form, code, pre")) return true;
 
 		if (el instanceof HTMLElement) {
@@ -992,6 +1005,36 @@ export function extractPageText(): string {
 		}
 
 		return false;
+	};
+
+	// recursively extract text, adding line breaks around block-level elements
+	const extractText = (node: Node): string => {
+		if (node.nodeType === Node.TEXT_NODE) {
+			return node.textContent || "";
+		}
+
+		if (node.nodeType !== Node.ELEMENT_NODE) return "";
+
+		const el = node as Element;
+		if (shouldExclude(el)) return "";
+
+		const tagName = el.tagName.toLowerCase();
+		const isHeading = /^h[1-6]$/.test(tagName);
+		const isBlock = blockTags.has(tagName);
+
+		let inner = "";
+		for (const child of el.childNodes) {
+			inner += extractText(child);
+		}
+
+		if (isHeading) {
+			// headings get a blank line before and after to clearly separate sections
+			return "\n\n" + inner.trim() + "\n\n";
+		} else if (isBlock) {
+			return "\n\n" + inner.trim() + "\n";
+		}
+
+		return inner;
 	};
 
 	const contentSelectors = [
@@ -1014,26 +1057,7 @@ export function extractPageText(): string {
 	let textContent = "";
 
 	if (mainContent) {
-		const walker = document.createTreeWalker(
-			mainContent,
-			NodeFilter.SHOW_TEXT,
-			{
-				acceptNode: (node) => {
-					const parent = node.parentElement;
-					if (!parent) return NodeFilter.FILTER_REJECT;
-					if (shouldExclude(parent)) return NodeFilter.FILTER_REJECT;
-					return NodeFilter.FILTER_ACCEPT;
-				},
-			}
-		);
-
-		let currentNode: Node | null;
-		while ((currentNode = walker.nextNode())) {
-			const text = currentNode.textContent || "";
-			if (text.trim()) {
-				textContent += text + " ";
-			}
-		}
+		textContent = extractText(mainContent);
 	} else {
 		const bodyClone = document.body.cloneNode(true) as HTMLElement;
 
@@ -1052,13 +1076,19 @@ export function extractPageText(): string {
 	}
 
 	return textContent
-		.trim()
-		.replace(/\s+/g, " ")
+		// normalize horizontal whitespace within lines (preserve newlines)
+		.replace(/[ \t]+/g, " ")
+		.replace(/\n[ \t]+/g, "\n")
+		.replace(/[ \t]+\n/g, "\n")
+		// collapse 3+ consecutive newlines to 2
+		.replace(/\n{3,}/g, "\n\n")
 		.replace(/["\u201C\u201D\u2018\u2019]/g, "\"")
 		.replace(/[\u2013\u2014]/g, "-")
 		.replace(/https?:\/\/[^\s]+/g, "")
 		.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, "")
 		.replace(/\b\d+\b/g, "")
-		.replace(/\s+/g, " ")
+		// re-normalize after substitutions
+		.replace(/[ \t]+/g, " ")
+		.replace(/\n{3,}/g, "\n\n")
 		.trim();
 }
