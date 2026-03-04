@@ -30,35 +30,31 @@ export function getAdminBaseUrl(currentUrl: string): string {
 export function extractImages(pageData: any): MediaAsset[] {
 	const images: MediaAsset[] = [];
 
+	// map raw image data to a MediaAsset
+	function imageDataToAsset(data: any): MediaAsset {
+		const url = data.file || data.url || data.full_url || data.meta?.download_url || data.src || '';
+		return {
+			id: data.id,
+			title: data.title || data.alt || '',
+			url,
+			type: 'image',
+			filename: data.filename || (data.file ? data.file.split('/').pop() : undefined),
+			isDecorative: data.is_decorative === true,
+		};
+	}
+
 	// helper function to recursively search for images in nested objects
 	function findImages(obj: any): void {
 		if (!obj || typeof obj !== 'object') return;
 
 		// check if this object represents an image
-		if (obj.type === 'image' && obj.value) {
-			const imageData = obj.value;
-			if (imageData.id) {
-				images.push({
-					id: imageData.id,
-					title: imageData.title || imageData.alt || '',
-					url: imageData.url || imageData.full_url || imageData.meta?.download_url || imageData.src || '',
-					type: 'image',
-					filename: imageData.filename
-				});
-			}
+		if (obj.type === 'image' && obj.value?.id) {
+			images.push(imageDataToAsset(obj.value));
 		}
 
 		// check for image fields in the object
-		if (obj.image && typeof obj.image === 'object') {
-			if (obj.image.id) {
-				images.push({
-					id: obj.image.id,
-					title: obj.image.title || obj.image.alt || '',
-					url: obj.image.url || obj.image.full_url || obj.image.meta?.download_url || obj.image.src || '',
-					type: 'image',
-					filename: obj.image.filename
-				});
-			}
+		if (obj.image && typeof obj.image === 'object' && obj.image.id) {
+			images.push(imageDataToAsset(obj.image));
 		}
 
 		// recursively search arrays and objects
@@ -67,6 +63,11 @@ export function extractImages(pageData: any): MediaAsset[] {
 		} else {
 			Object.values(obj).forEach(value => findImages(value));
 		}
+	}
+
+	// extract background_header_image from the top level before recursive search
+	if (pageData?.background_header_image?.id) {
+		images.push(imageDataToAsset(pageData.background_header_image));
 	}
 
 	findImages(pageData);

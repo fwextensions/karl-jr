@@ -12,6 +12,7 @@ export interface MediaAsset {
   type: 'image' | 'document';
   filename?: string;
   altText?: string;
+  isDecorative?: boolean;
 }
 
 /**

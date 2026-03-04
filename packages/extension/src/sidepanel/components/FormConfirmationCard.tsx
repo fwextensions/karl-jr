@@ -2,6 +2,7 @@ import React from "react";
 import { Card } from "./Card";
 import { OpenIcon } from "./OpenIcon";
 import type { FormConfirmation } from "@sf-gov/shared";
+import { trackEvent } from "@/lib/analytics";
 
 interface FormConfirmationCardProps {
 	formConfirmation: FormConfirmation;
@@ -23,6 +24,9 @@ export const FormConfirmationCard: React.FC<FormConfirmationCardProps> = ({
 	};
 
 	const handleOpenConfirmation = () => {
+		trackEvent("form_confirmation_opened", {
+			page_url: currentUrl
+		});
 		window.open(getSubmittedUrl(), "_blank");
 	};
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Button } from "./Button";
+import { trackEvent, trackError } from "@/lib/analytics";
 import {
 	checkHeadingNesting,
 	checkImageAltText,
@@ -112,14 +113,19 @@ const ImageAltTextResults = ({ results, apiImages }: { results: ImageAltTextInfo
 		);
 	}
 
-	const missingAltText = results.filter(info => !info.hasAltText);
+	// create a set of decorative image URLs to exclude from the check
+	const decorativeImageUrls = new Set(
+		apiImages.filter(img => img.isDecorative).map(img => img.url)
+	);
+
+	const missingAltText = results.filter(info => !info.hasAltText && !decorativeImageUrls.has(info.url));
 
 	if (missingAltText.length === 0) {
 		return <PassMessage>All images have alt text!</PassMessage>;
 	}
 
 	// create a set of API image URLs for comparison
-	const apiImageUrls = new Set(apiImages.map(img => img.url));
+	const apiImageUrls = new Set(apiImages.filter(img => !img.isDecorative).map(img => img.url));
 
 	// separate images into those in API and those not in API
 	const imagesInApi = missingAltText.filter(info => apiImageUrls.has(info.url));
@@ -391,12 +397,18 @@ const ReadabilityScoreResults = ({ result, onCopyText }: { result: ReadabilitySc
 		try {
 			await onCopyText();
 			setShowCopyNotification(true);
+
+			trackEvent("hemingway_compare_clicked", {
+				readability_score: result.score,
+				grade_level: result.gradeLevel
+			});
 		} catch {
 			alert("Failed to copy text to clipboard. Please manually copy the page text and paste it into Hemingway App for comparison.\n\n1. Clear any existing text in Hemingway\n2. Copy text from this page\n3. Paste into Hemingway to compare scores");
 		}
 	};
 
 	const handleOpenHemingway = () => {
+		trackEvent("hemingway_app_opened");
 		window.open("https://hemingwayapp.com/", "_blank");
 	};
 
@@ -629,6 +641,8 @@ export function A11yChecker({
 
 		onCheckStart?.();
 
+		const startTime = Date.now();
+
 		try {
 			const [tab] = await chrome.tabs.query({
 				active: true,
@@ -657,24 +671,46 @@ export function A11yChecker({
 			// apply all highlights in one pass
 			await executeInTab(tabId, applyHighlights);
 
-			setResults({
+			const finalResults = {
 				headings: headings ?? [],
 				images: altText ?? [],
 				links: linkData ?? emptyLinkResults,
 				tables: tableData ?? { totalTables: 0, issues: [] },
 				videos: videoData ?? { totalVideos: 0, issues: [] },
 				readability: readability ?? null,
-			});
+			};
 
-			// notify parent of which image URLs are missing alt text
+			setResults(finalResults);
+
+			// notify parent of which image URLs are missing alt text (excluding decorative images)
 			if (onMissingAltTextUrls) {
+				const decorativeUrls = new Set(images.filter(img => img.isDecorative).map(img => img.url));
 				const missingUrls = new Set(
 					(altText ?? [])
-						.filter(info => !info.hasAltText)
+						.filter(info => !info.hasAltText && !decorativeUrls.has(info.url))
 						.map(info => info.url)
 				);
 				onMissingAltTextUrls(missingUrls);
 			}
+
+			const duration = Date.now() - startTime;
+
+			// track successful a11y check
+			const decorativeUrls = new Set(images.filter(img => img.isDecorative).map(img => img.url));
+			const missingAltCount = (altText ?? []).filter(info => !info.hasAltText && !decorativeUrls.has(info.url)).length;
+			const linkIssuesCount = (linkData?.rawUrls.length ?? 0) + (linkData?.vagueLinks.length ?? 0) + (linkData?.vagueButtons.length ?? 0);
+
+			trackEvent("a11y_check_completed", {
+				page_url: pageUrl,
+				duration_ms: duration,
+				heading_issues: finalResults.headings.length,
+				missing_alt_text: missingAltCount,
+				link_issues: linkIssuesCount,
+				table_issues: finalResults.tables?.issues.length ?? 0,
+				video_issues: finalResults.videos?.issues.length ?? 0,
+				readability_score: finalResults.readability?.score ?? null,
+				total_issues: finalResults.headings.length + missingAltCount + linkIssuesCount + (finalResults.tables?.issues.length ?? 0) + (finalResults.videos?.issues.length ?? 0)
+			});
 
 			setHasRun(true);
 			setIsLoading(false);
@@ -685,6 +721,10 @@ export function A11yChecker({
 			setError(errorMessage);
 			setIsLoading(false);
 			onCheckError?.(errorMessage);
+
+			trackError("a11y_check_error", err instanceof Error ? err : new Error(errorMessage), {
+				page_url: pageUrl
+			});
 		}
 	};
 
