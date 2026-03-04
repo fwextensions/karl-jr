@@ -632,13 +632,46 @@ export function calculateReadabilityScore(): ReadabilityScore {
 		return false;
 	};
 	
+	// block-level elements that should be separated by line breaks
+	const blockTags = new Set([
+		"h1", "h2", "h3", "h4", "h5", "h6",
+		"p", "div", "section", "article",
+		"blockquote", "ul", "ol", "li",
+		"figure", "figcaption", "details", "summary",
+		"address", "dd", "dt", "dl"
+	]);
+
+	// recursively extract text, adding line breaks around block-level elements
+	// so headings and paragraphs don't get mashed into one run-on "sentence"
+	const extractStructuredText = (node: Node): string => {
+		if (node.nodeType === Node.TEXT_NODE) {
+			return node.textContent || "";
+		}
+		if (node.nodeType !== Node.ELEMENT_NODE) return "";
+		const el = node as Element;
+		if (shouldExclude(el)) return "";
+		const tagName = el.tagName.toLowerCase();
+		const isHeading = /^h[1-6]$/.test(tagName);
+		const isBlock = blockTags.has(tagName);
+		let inner = "";
+		for (const child of el.childNodes) {
+			inner += extractStructuredText(child);
+		}
+		if (isHeading) {
+			return "\n\n" + inner.trim() + "\n\n";
+		} else if (isBlock) {
+			return "\n\n" + inner.trim() + "\n";
+		}
+		return inner;
+	};
+
 	// extract text content - try multiple strategies like Hemingway might
 	let textContent = "";
-	
+
 	// strategy 1: look for main content areas (most specific first)
 	const contentSelectors = [
 		"main",
-		"[role='main']", 
+		"[role='main']",
 		"article",
 		".main-content",
 		".content",
@@ -646,69 +679,48 @@ export function calculateReadabilityScore(): ReadabilityScore {
 		".post-content",
 		".entry-content"
 	];
-	
+
 	let mainContent: Element | null = null;
 	for (const selector of contentSelectors) {
 		mainContent = document.querySelector(selector);
 		if (mainContent) break;
 	}
-	
+
 	if (mainContent) {
-		// walk through main content and collect text
-		const walker = document.createTreeWalker(
-			mainContent,
-			NodeFilter.SHOW_TEXT,
-			{
-				acceptNode: (node) => {
-					const parent = node.parentElement;
-					if (!parent) return NodeFilter.FILTER_REJECT;
-					if (shouldExclude(parent)) return NodeFilter.FILTER_REJECT;
-					return NodeFilter.FILTER_ACCEPT;
-				},
-			}
-		);
-		
-		let currentNode: Node | null;
-		while ((currentNode = walker.nextNode())) {
-			const text = currentNode.textContent || "";
-			if (text.trim()) {
-				textContent += text + " ";
-			}
-		}
+		textContent = extractStructuredText(mainContent);
 	} else {
 		// fallback: use body but be more aggressive about exclusions
 		const bodyClone = document.body.cloneNode(true) as HTMLElement;
-		
+
 		// remove more elements that Hemingway likely excludes
 		const excludeSelectors = [
-			"header", "footer", "nav", "aside", 
-			"form", "code", "pre", "script", "style", 
+			"header", "footer", "nav", "aside",
+			"form", "code", "pre", "script", "style",
 			"button", "input", "select", "textarea",
 			".header", ".footer", ".nav", ".navigation", ".sidebar",
 			".menu", ".breadcrumb", ".pagination", ".social",
 			".advertisement", ".ad", ".banner", ".popup",
 			"[role='banner']", "[role='navigation']", "[role='complementary']"
 		].join(", ");
-		
+
 		bodyClone.querySelectorAll(excludeSelectors).forEach(el => el.remove());
 		textContent = bodyClone.textContent || "";
 	}
-	
-	// clean up text more aggressively like Hemingway
+
+	// clean up text - preserve newlines so sentence splitting can use them
 	textContent = textContent
-		.trim()
-		// normalize whitespace
-		.replace(/\s+/g, " ")
-		// remove extra punctuation that might interfere
+		// normalize horizontal whitespace only (keep newlines)
+		.replace(/[ \t]+/g, " ")
+		.replace(/\n[ \t]+/g, "\n")
+		.replace(/[ \t]+\n/g, "\n")
+		.replace(/\n{3,}/g, "\n\n")
 		.replace(/[""'']/g, '"')
-		.replace(/[–—]/g, '-')
-		// remove URLs and email addresses
-		.replace(/https?:\/\/[^\s]+/g, '')
-		.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '')
-		// remove numbers that aren't part of words (like dates, phone numbers)
-		.replace(/\b\d+\b/g, '')
-		// clean up extra spaces again
-		.replace(/\s+/g, " ")
+		.replace(/[–—]/g, "-")
+		.replace(/https?:\/\/[^\s]+/g, "")
+		.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, "")
+		.replace(/\b\d+\b/g, "")
+		.replace(/[ \t]+/g, " ")
+		.replace(/\n{3,}/g, "\n\n")
 		.trim();
 	
 	// count characters (letters only, like Hemingway likely does)
@@ -721,10 +733,11 @@ export function calculateReadabilityScore(): ReadabilityScore {
 		.filter(word => word.length > 0 && /^[a-zA-Z]+$/.test(word));
 	const wordCount = words.length;
 	
-	// count sentences - be much more conservative about splitting
-	// The issue might be that we're over-splitting sentences, making them appear shorter than they are
+	// count sentences - split on punctuation and on paragraph/heading breaks
+	// (double newlines act as sentence boundaries for headings and block elements
+	// that have no trailing period, preventing them from inflating sentence length)
 	let sentences = textContent
-		.split(/[.!?]+/)
+		.split(/[.!?]+|\n{2,}/)
 		.map(s => s.trim())
 		.filter(s => s.length > 0);
 	
