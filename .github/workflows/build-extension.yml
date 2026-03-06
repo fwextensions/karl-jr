@@ -61,6 +61,12 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: cp "packages/extension/release/karl-jr-${{ steps.version.outputs.ci }}.zip" packages/extension/release/karl-jr-latest.zip
 
+      - name: Move nightly tag to current commit
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          git tag -f nightly
+          git push -f origin nightly
+
       - name: Update nightly release
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: softprops/action-gh-release@v2
