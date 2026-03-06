@@ -121,7 +121,7 @@ const ImageAltTextResults = ({ results, apiImages }: { results: ImageAltTextInfo
 	const missingAltText = results.filter(info => !info.hasAltText && !decorativeImageUrls.has(info.url));
 
 	if (missingAltText.length === 0) {
-		return <PassMessage>All images have alt text!</PassMessage>;
+		return <PassMessage>All images have alt text, or have been marked as decorative!</PassMessage>;
 	}
 
 	// create a set of API image URLs for comparison
@@ -513,7 +513,7 @@ const ReadabilityScoreResults = ({ result, onCopyText }: { result: ReadabilitySc
 			</div>
 
 			<div className="text-xs text-gray-600 italic">
-				Score calculated using adaptive Automated Readability Index, adjusted for sentence complexity. Results will be close to, but may not exactly match, Hemingway App scores. SF.gov aims for 8th grade level or lower for accessibility.
+				Score calculated using adaptive Automated Readability Index, adjusted for sentence complexity. Results will be close to, but may not exactly match, Hemingway App scores.
 			</div>
 		</div>
 	);

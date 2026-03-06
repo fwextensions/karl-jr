@@ -25,23 +25,41 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Set CI build version
+        id: version
+        run: |
+          BASE=$(node -p "require('./packages/extension/package.json').version")
+          CI_VERSION="${BASE}.${{ github.run_number }}"
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            VERSION_NAME="${BASE}-pr-${{ github.event.pull_request.number }} (build ${{ github.run_number }})"
+          else
+            VERSION_NAME="${BASE}-nightly (build ${{ github.run_number }})"
+          fi
+
+          echo "base=${BASE}" >> $GITHUB_OUTPUT
+          echo "ci=${CI_VERSION}" >> $GITHUB_OUTPUT
+          echo "name=${VERSION_NAME}" >> $GITHUB_OUTPUT
+
+          # patch package.json in-place so vite picks up the 4-part version
+          jq ".version = \"${CI_VERSION}\"" packages/extension/package.json > /tmp/pkg.json
+          mv /tmp/pkg.json packages/extension/package.json
+
       - name: Build extension
         run: npm run build:extension
+        env:
+          BUILD_VERSION_NAME: ${{ steps.version.outputs.name }}
 
-      - name: Get version
-        id: version
-        run: echo "version=$(node -p "require('./packages/extension/package.json').version")" >> $GITHUB_OUTPUT
-
-      - name: Upload versioned artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: karl-jr-${{ steps.version.outputs.version }}-${{ github.event_name == 'pull_request' && format('pr-{0}-', github.event.pull_request.number) || '' }}build-${{ github.run_number }}
+          name: karl-jr-${{ steps.version.outputs.ci }}${{ github.event_name == 'pull_request' && format('-pr-{0}', github.event.pull_request.number) || '' }}
           path: packages/extension/release/*.zip
           retention-days: 30
 
       - name: Rename zip for stable release asset name
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: cp packages/extension/release/karl-jr-${{ steps.version.outputs.version }}.zip packages/extension/release/karl-jr-latest.zip
+        run: cp "packages/extension/release/karl-jr-${{ steps.version.outputs.ci }}.zip" packages/extension/release/karl-jr-latest.zip
 
       - name: Update nightly release
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -55,7 +73,7 @@ jobs:
           body: |
             Automatically built from the latest commit on `main`.
 
-            **Version:** ${{ steps.version.outputs.version }}
+            **Version:** ${{ steps.version.outputs.ci }}
             **Commit:** [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
             **Run:** [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
 

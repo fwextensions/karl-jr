@@ -5,11 +5,14 @@ export default defineManifest(({ mode }) => {
 	const { version } = pkg;
 	const isDev = mode === "development";
 	const name = isDev ? `Karl Jr. DEV ${version}` : "Karl Jr.";
+	// set by CI to provide a human-readable label visible on chrome://extensions
+	const versionName = process.env.BUILD_VERSION_NAME;
 
 	return {
 		manifest_version: 3,
 		name,
 		version,
+		...(versionName ? { version_name: versionName } : {}),
 		description: "Browser extension that provides information about SF.gov pages, with links to the Karl CMS for editing",
 		icons: {
 			"16": "src/img/favicon-16.png",
