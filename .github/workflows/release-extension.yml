@@ -55,10 +55,17 @@ jobs:
             **Version:** ${{ steps.version.outputs.version }}
             **Commit:** [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
 
-            ### Submit to Chrome Web Store
-            Download `karl-jr-${{ steps.version.outputs.version }}.zip` and upload it in the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole).
-
             ### Install unpacked
             1. Download and unzip `karl-jr-${{ steps.version.outputs.version }}.zip`
             2. Go to `chrome://extensions/`, enable **Developer mode**
             3. Click **Load unpacked** and select the unzipped folder
+
+      - name: Upload to Chrome Web Store
+        uses: mnao305/chrome-extension-upload-action@v5.0.0
+        with:
+          file-path: packages/extension/release/karl-jr-${{ steps.version.outputs.version }}.zip
+          extension-id: ${{ secrets.CWS_EXTENSION_ID }}
+          client-id: ${{ secrets.CWS_CLIENT_ID }}
+          client-secret: ${{ secrets.CWS_CLIENT_SECRET }}
+          refresh-token: ${{ secrets.CWS_REFRESH_TOKEN }}
+          publish: true
