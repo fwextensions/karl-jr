@@ -20,6 +20,14 @@ export default defineManifest(({ mode }) => {
 			"48": "src/img/favicon-48.png",
 			"128": "src/img/favicon-128.png",
 		},
+		commands: {
+			"_execute_action": {
+				suggested_key: {
+					default: "Alt+K",
+					mac: "Ctrl+K",
+				},
+			},
+		},
 		permissions: [
 			"sidePanel",
 			"tabs",
