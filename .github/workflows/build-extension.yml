@@ -45,10 +45,24 @@ jobs:
           jq ".version = \"${CI_VERSION}\"" packages/extension/package.json > /tmp/pkg.json
           mv /tmp/pkg.json packages/extension/package.json
 
+      - name: Validate required secrets
+        run: |
+          missing=()
+          [[ -z "$VITE_POSTHOG_API_KEY" ]] && missing+=("VITE_POSTHOG_API_KEY")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "::error::Missing required secrets: ${missing[*]}"
+            echo "::error::Add them to the repository secrets at Settings > Secrets and variables > Actions"
+            exit 1
+          fi
+          echo "All required secrets are present"
+        env:
+          VITE_POSTHOG_API_KEY: ${{ secrets.VITE_POSTHOG_API_KEY }}
+
       - name: Build extension
         run: npm run build:extension
         env:
           BUILD_VERSION_NAME: ${{ steps.version.outputs.name }}
+          VITE_POSTHOG_API_KEY: ${{ secrets.VITE_POSTHOG_API_KEY }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

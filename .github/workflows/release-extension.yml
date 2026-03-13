@@ -38,9 +38,24 @@ jobs:
             exit 1
           fi
 
+      - name: Validate required secrets
+        run: |
+          missing=()
+          [[ -z "$VITE_POSTHOG_API_KEY" ]] && missing+=("VITE_POSTHOG_API_KEY")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "::error::Missing required secrets: ${missing[*]}"
+            echo "::error::Add them to the repository secrets at Settings > Secrets and variables > Actions"
+            exit 1
+          fi
+          echo "All required secrets are present"
+        env:
+          VITE_POSTHOG_API_KEY: ${{ secrets.VITE_POSTHOG_API_KEY }}
+
       - name: Build extension
         run: npm run build:extension
         # no BUILD_VERSION_NAME set, so no version_name is injected — clean release manifest
+        env:
+          VITE_POSTHOG_API_KEY: ${{ secrets.VITE_POSTHOG_API_KEY }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
