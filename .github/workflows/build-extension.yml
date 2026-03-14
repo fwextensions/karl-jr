@@ -83,7 +83,7 @@ jobs:
 
       - name: Update nightly release
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.5.0
         with:
           tag_name: nightly
           name: "Latest Build (nightly)"
