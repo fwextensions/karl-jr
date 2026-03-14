@@ -1,6 +1,7 @@
 {
 	"name": "sf-gov-companion",
 	"private": true,
+	"type": "module",
 	"workspaces": [
 		"packages/*"
 	],
@@ -11,7 +12,7 @@
 		"build": "npm run build --workspaces --if-present",
 		"build:extension": "npm run build --workspace=@sf-gov/extension",
 		"build:server": "npm run build --workspace=@sf-gov/server",
-		"release:extension": "npm run release --workspace=@sf-gov/extension",
+		"release": "node scripts/release.js",
 		"type-check": "npm run type-check --workspaces --if-present"
 	},
 	"devDependencies": {
