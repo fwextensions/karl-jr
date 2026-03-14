@@ -76,11 +76,11 @@ jobs:
             3. Click **Load unpacked** and select the unzipped folder
 
       - name: Upload to Chrome Web Store
-        uses: mnao305/chrome-extension-upload@v5.0.0
+        uses: mobilefirstllc/cws-publish@latest
         with:
-          file-path: packages/extension/release/karl-jr-${{ steps.version.outputs.version }}.zip
-          extension-id: ${{ secrets.CWS_EXTENSION_ID }}
-          client-id: ${{ secrets.CWS_CLIENT_ID }}
-          client-secret: ${{ secrets.CWS_CLIENT_SECRET }}
-          refresh-token: ${{ secrets.CWS_REFRESH_TOKEN }}
-          publish: true
+          action: "publish"
+          extension_id: ${{ secrets.CWS_EXTENSION_ID }}
+          zip_file: packages/extension/release/karl-jr-${{ steps.version.outputs.version }}.zip
+          client_id: ${{ secrets.CWS_CLIENT_ID }}
+          client_secret: ${{ secrets.CWS_CLIENT_SECRET }}
+          refresh_token: ${{ secrets.CWS_REFRESH_TOKEN }}
