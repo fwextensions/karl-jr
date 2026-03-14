@@ -69,8 +69,7 @@ rl.question(
 		exec(`git add "${PACKAGE_JSON_PATH}"`);
 		exec(`git commit -m "Update version to ${newVersion}"`);
 		exec(`git tag v${newVersion}`);
-		exec("git push origin main");
-		exec(`git push origin v${newVersion}`);
+		exec(`git push --atomic origin main v${newVersion}`);
 
 		console.log(`Released v${newVersion}`);
 	}
