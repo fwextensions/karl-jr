@@ -236,7 +236,7 @@ const VideoAccessibilityResultsComponent = ({ results }: { results: VideoAccessi
 	if (results.issues.length === 0) {
 		return (
 			<div className="p-3 bg-green-50 text-green-700 text-sm rounded border border-green-100">
-				All videos are accessible!
+				Captions and transcripts were detected for all videos. Please verify that transcripts accurately reflect the video content.
 			</div>
 		);
 	}
@@ -267,6 +267,9 @@ const VideoAccessibilityResultsComponent = ({ results }: { results: VideoAccessi
 								</li>
 							)}
 						</ul>
+						<p className="mt-2 text-xs text-gray-500 italic">
+							Note: this check only detects the presence of a transcript, not whether it accurately reflects the video content. Please review transcripts manually.
+						</p>
 						{issue.videoSrc && (
 							<div className="mt-2 text-xs text-gray-500 break-all">
 								Source: {issue.videoSrc}
