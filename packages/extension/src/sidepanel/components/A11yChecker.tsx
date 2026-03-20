@@ -257,13 +257,13 @@ const VideoAccessibilityResultsComponent = ({ results }: { results: VideoAccessi
 							{issue.missingCaptions && (
 								<li className="flex items-start gap-2">
 									<span className="text-red-600 mt-0.5">✗</span>
-									<span>Missing captions - add captions or subtitles to the video</span>
+									<span>No captions detected - ensure the video has a CC button or embedded caption/subtitle tracks</span>
 								</li>
 							)}
 							{issue.missingTranscript && (
 								<li className="flex items-start gap-2">
 									<span className="text-red-600 mt-0.5">✗</span>
-									<span>Missing transcript - add a text transcript near the video</span>
+									<span>No transcript detected - add a "Show transcript" toggle or text transcript near the video</span>
 								</li>
 							)}
 						</ul>

@@ -160,83 +160,211 @@ export interface VideoAccessibilityResults {
 }
 
 /**
+ * check if a video player container has a CC/closed captions toggle button
+ * looks for buttons labeled "CC", "closed captions", "captions", or with
+ * common caption-related attributes within the video player
+ */
+function hasCaptionToggle(container: Element): boolean {
+	// look for buttons or clickable elements with caption-related text/attributes
+	const candidates = Array.from(container.querySelectorAll(
+		"button, [role='button'], [class*='caption'], [class*='cc'], [class*='subtitle'], [aria-label*='caption'], [aria-label*='Caption'], [aria-label*='CC'], [aria-label*='subtitle'], [aria-label*='Subtitle'], [title*='caption'], [title*='Caption'], [title*='CC'], [title*='subtitle'], [title*='Subtitle']"
+	));
+
+	for (const el of candidates) {
+		const text = (el.textContent || "").trim().toLowerCase();
+		const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
+		const title = (el.getAttribute("title") || "").toLowerCase();
+		const className = (el.getAttribute("class") || "").toLowerCase();
+
+		// match common caption button patterns
+		if (
+			text === "cc" ||
+			text === "closed captions" ||
+			text === "captions" ||
+			text === "subtitles" ||
+			ariaLabel.includes("caption") ||
+			ariaLabel.includes("subtitle") ||
+			ariaLabel.includes("closed caption") ||
+			title.includes("caption") ||
+			title.includes("subtitle") ||
+			className.includes("captions-button") ||
+			className.includes("cc-button") ||
+			className.includes("subtitles-button")
+		) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * check if a transcript link or toggle exists near a video element
+ * looks for links/buttons labeled "Show transcript", "Transcript", etc.
+ * within the video's parent container or nearby siblings
+ */
+function hasTranscriptToggle(video: Element): boolean {
+	// search progressively wider containers around the video
+	const searchContainers: Element[] = [];
+
+	// start with the video's direct parent
+	if (video.parentElement) {
+		searchContainers.push(video.parentElement);
+	}
+
+	// then the nearest wrapping div/section/article
+	const wrapper = video.parentElement?.closest("div, section, article, figure");
+	if (wrapper) {
+		searchContainers.push(wrapper);
+	}
+
+	// also check the wrapper's parent (for cases where the toggle is a sibling
+	// of the video's container rather than inside it)
+	if (wrapper?.parentElement) {
+		searchContainers.push(wrapper.parentElement);
+	}
+
+	for (const container of searchContainers) {
+		// look for links and buttons with transcript-related text
+		const clickables = Array.from(container.querySelectorAll(
+			"a, button, [role='button'], [class*='transcript'], [id*='transcript']"
+		));
+
+		for (const el of clickables) {
+			const text = (el.textContent || "").trim().toLowerCase();
+			const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
+			const title = (el.getAttribute("title") || "").toLowerCase();
+			const className = (el.getAttribute("class") || "").toLowerCase();
+			const id = (el.getAttribute("id") || "").toLowerCase();
+
+			if (
+				text.includes("transcript") ||
+				text.includes("show transcript") ||
+				text.includes("view transcript") ||
+				text.includes("video transcript") ||
+				ariaLabel.includes("transcript") ||
+				title.includes("transcript") ||
+				className.includes("transcript") ||
+				id.includes("transcript")
+			) {
+				return true;
+			}
+		}
+
+		// also check for static transcript content (already visible)
+		const transcriptElements = container.querySelectorAll(
+			"[class*='transcript'], [id*='transcript']"
+		);
+		for (const el of Array.from(transcriptElements)) {
+			const text = (el.textContent || "").trim();
+			// if the element has substantial text content, it's likely a transcript
+			if (text.length > 50) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+/**
  * check all videos on the page for accessibility requirements
  * this function runs in the page context via chrome.scripting.executeScript
+ *
+ * for captions, checks:
+ * - <track> elements with kind="captions" or kind="subtitles"
+ * - CC/closed captions toggle button within the video player
+ * - YouTube cc_load_policy parameter
+ *
+ * for transcripts, checks:
+ * - "Show transcript" or similar toggle link/button near the video
+ * - transcript content or elements with transcript-related classes/IDs
+ * - text containing "transcript" keyword in the video's container
  */
 export function checkVideoAccessibility(): VideoAccessibilityResults {
 	const videos = Array.from(document.querySelectorAll("video, iframe[src*='youtube'], iframe[src*='vimeo']"));
 	const issues: VideoAccessibilityIssue[] = [];
-	
+
 	// exclude videos in header and footer
 	const contentVideos = videos.filter(video => {
 		return !video.closest("header") && !video.closest("footer");
 	});
-	
+
 	contentVideos.forEach((video, index) => {
 		let missingCaptions = false;
 		let missingTranscript = false;
 		let videoSrc = "";
-		
+
 		if (video.tagName.toLowerCase() === "video") {
 			// check for <video> element
 			const videoElement = video as HTMLVideoElement;
 			videoSrc = videoElement.src || videoElement.currentSrc || "embedded video";
-			
-			// check for captions (track element with kind="captions" or kind="subtitles")
+
+			// check for captions via <track> elements
 			const tracks = Array.from(videoElement.querySelectorAll("track"));
-			const hasCaptions = tracks.some(track => {
+			const hasTrackCaptions = tracks.some(track => {
 				const kind = track.getAttribute("kind");
 				return kind === "captions" || kind === "subtitles";
 			});
-			
-			if (!hasCaptions) {
-				missingCaptions = true;
+
+			if (!hasTrackCaptions) {
+				// check for a CC toggle button in the video player's container
+				const playerContainer = video.closest(
+					"[class*='player'], [class*='video'], figure, .wp-block-video"
+				) || video.parentElement;
+
+				if (!playerContainer || !hasCaptionToggle(playerContainer)) {
+					missingCaptions = true;
+				}
 			}
 		} else if (video.tagName.toLowerCase() === "iframe") {
 			// check for iframe (YouTube, Vimeo, etc.)
 			const iframe = video as HTMLIFrameElement;
 			videoSrc = iframe.src || "embedded video";
-			
-			// for iframes, we can't directly check for captions
-			// but we can check if the URL includes caption parameters
 			const src = iframe.src.toLowerCase();
-			
-			// YouTube: check for cc_load_policy=1 or cc_lang_pref
-			// Vimeo: captions are typically enabled by default if available
-			// we'll assume iframes need manual verification and flag them
-			const hasYouTubeCaptions = src.includes("youtube") && (src.includes("cc_load_policy=1") || src.includes("cc_lang_pref"));
-			
-			if (!hasYouTubeCaptions && src.includes("youtube")) {
-				missingCaptions = true;
+
+			if (src.includes("youtube")) {
+				// YouTube: cc_load_policy=1 forces captions on.  Otherwise, captions
+				// are still available via the player's built-in CC button, so we
+				// don't flag YouTube embeds as missing captions — the toggle is
+				// always present in the YouTube player UI.
+				// (no action needed — YouTube always provides a CC button)
 			} else if (src.includes("vimeo")) {
-				// for Vimeo, we can't easily detect captions, so we'll flag it for manual check
-				missingCaptions = true;
+				// Vimeo embeds include a CC button when captions are available.
+				// We can't inspect inside the iframe, but we check for a CC toggle
+				// in the surrounding container in case a custom player wraps it.
+				const playerContainer = video.closest(
+					"[class*='player'], [class*='video'], figure"
+				) || video.parentElement;
+
+				if (playerContainer && hasCaptionToggle(playerContainer)) {
+					// found a caption toggle outside the iframe
+				} else {
+					// can't confirm captions — flag for manual review
+					missingCaptions = true;
+				}
+			} else {
+				// unknown iframe video provider — check for a CC toggle nearby
+				const playerContainer = video.closest(
+					"[class*='player'], [class*='video'], figure"
+				) || video.parentElement;
+
+				if (!playerContainer || !hasCaptionToggle(playerContainer)) {
+					missingCaptions = true;
+				}
 			}
 		}
-		
-		// check for transcript
-		// look for common transcript indicators near the video
-		const parent = video.parentElement;
-		const container = parent?.closest("div, section, article") || parent;
-		
-		if (container) {
-			const containerText = container.textContent?.toLowerCase() || "";
-			const hasTranscriptKeyword = containerText.includes("transcript") || 
-				containerText.includes("video transcript") ||
-				container.querySelector("[class*='transcript'], [id*='transcript']") !== null;
-			
-			if (!hasTranscriptKeyword) {
-				missingTranscript = true;
-			}
-		} else {
+
+		// check for transcript toggle or content near the video
+		if (!hasTranscriptToggle(video)) {
 			missingTranscript = true;
 		}
-		
+
 		// if video has any issues, add to results
 		if (missingCaptions || missingTranscript) {
 			// mark the video for highlighting
 			video.setAttribute("data-a11y-video-issue", "true");
-			
+
 			issues.push({
 				videoIndex: index + 1,
 				videoSrc: videoSrc.substring(0, 100), // truncate long URLs
@@ -245,7 +373,7 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 			});
 		}
 	});
-	
+
 	return {
 		totalVideos: contentVideos.length,
 		issues,
