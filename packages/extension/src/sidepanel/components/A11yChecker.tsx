@@ -263,7 +263,7 @@ const VideoAccessibilityResultsComponent = ({ results }: { results: VideoAccessi
 							{issue.missingTranscript && (
 								<li className="flex items-start gap-2">
 									<span className="text-red-600 mt-0.5">✗</span>
-									<span>No transcript detected - a "Show transcript" toggle may be present, but no transcript content was found. Add transcript text to the video's transcript field.</span>
+									<span>No transcript detected. Add transcript text to the video's transcript field.</span>
 								</li>
 							)}
 						</ul>
