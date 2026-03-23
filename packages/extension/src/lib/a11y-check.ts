@@ -230,16 +230,29 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 		}
 
 		// strategy 2: look for a sibling or nearby element that holds transcript
-		// text (often a div that gets toggled visible/hidden)
+		// text.  Check ALL siblings, not just ones with transcript-related
+		// classes, because the CMS may use generic divs for the content panel.
 		const siblings = toggleEl.parentElement
 			? Array.from(toggleEl.parentElement.children)
 			: [];
 
 		for (const sibling of siblings) {
 			if (sibling === toggleEl) continue;
+			const tag = sibling.tagName.toLowerCase();
+			// skip interactive elements — those are other toggles/links
+			if (tag === "a" || tag === "button") continue;
 			const cls = (sibling.getAttribute("class") || "").toLowerCase();
 			const id = (sibling.getAttribute("id") || "").toLowerCase();
+
+			// prioritize elements with transcript-related attributes
 			if (cls.includes("transcript") || id.includes("transcript")) {
+				const text = (sibling.textContent || "").trim();
+				if (text.length > 10) return true;
+			}
+
+			// also check generic hidden/collapsed divs that might be the
+			// transcript panel (hidden via display:none, aria-hidden, etc.)
+			if (tag === "div" || tag === "section") {
 				const text = (sibling.textContent || "").trim();
 				if (text.length > 10) return true;
 			}
