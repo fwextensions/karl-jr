@@ -210,7 +210,60 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 		return false;
 	};
 
+	// check whether a transcript toggle's associated content area has real text.
+	// the toggle might exist as part of a CMS template even when no transcript
+	// was provided, so we need to verify actual content is present.
+	const hasTranscriptContent = (toggleEl: Element, container: Element): boolean => {
+		// strategy 1: check if the toggle controls a specific element via
+		// aria-controls, href fragment, or data-target
+		const controlsId = toggleEl.getAttribute("aria-controls")
+			|| (toggleEl.getAttribute("href") || "").replace(/^#/, "")
+			|| (toggleEl.getAttribute("data-target") || "").replace(/^#/, "");
+
+		if (controlsId) {
+			const controlled = document.getElementById(controlsId);
+			if (controlled) {
+				const text = (controlled.textContent || "").trim();
+				// need substantial text — short labels don't count
+				return text.length > 50;
+			}
+		}
+
+		// strategy 2: look for a sibling or nearby element that holds transcript
+		// text (often a div that gets toggled visible/hidden)
+		const siblings = toggleEl.parentElement
+			? Array.from(toggleEl.parentElement.children)
+			: [];
+
+		for (const sibling of siblings) {
+			if (sibling === toggleEl) continue;
+			const cls = (sibling.getAttribute("class") || "").toLowerCase();
+			const id = (sibling.getAttribute("id") || "").toLowerCase();
+			if (cls.includes("transcript") || id.includes("transcript")) {
+				const text = (sibling.textContent || "").trim();
+				if (text.length > 50) return true;
+			}
+		}
+
+		// strategy 3: search the wider container for transcript content elements
+		const transcriptAreas = Array.from(container.querySelectorAll(
+			"[class*='transcript'], [id*='transcript']"
+		));
+		for (const area of transcriptAreas) {
+			// skip the toggle element itself and small label-like elements
+			if (area === toggleEl || area.contains(toggleEl)) continue;
+			const tag = area.tagName.toLowerCase();
+			// skip links and buttons — those are toggles, not content
+			if (tag === "a" || tag === "button") continue;
+			const text = (area.textContent || "").trim();
+			if (text.length > 50) return true;
+		}
+
+		return false;
+	};
+
 	// check if a transcript link or toggle exists near a video element
+	// and that it points to actual transcript content
 	const hasTranscriptToggle = (videoEl: Element): boolean => {
 		const searchContainers: Element[] = [];
 
@@ -240,7 +293,7 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 				const className = (el.getAttribute("class") || "").toLowerCase();
 				const id = (el.getAttribute("id") || "").toLowerCase();
 
-				if (
+				const isTranscriptToggle =
 					text.includes("transcript") ||
 					text.includes("show transcript") ||
 					text.includes("view transcript") ||
@@ -248,9 +301,15 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 					ariaLabel.includes("transcript") ||
 					title.includes("transcript") ||
 					className.includes("transcript") ||
-					id.includes("transcript")
-				) {
-					return true;
+					id.includes("transcript");
+
+				if (isTranscriptToggle) {
+					// found a toggle — but does it have real content behind it?
+					if (hasTranscriptContent(el, container)) {
+						return true;
+					}
+					// toggle exists but no content — keep searching other
+					// containers in case the content is further up the DOM
 				}
 			}
 
@@ -259,6 +318,9 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 				"[class*='transcript'], [id*='transcript']"
 			);
 			for (const el of Array.from(transcriptElements)) {
+				const tag = el.tagName.toLowerCase();
+				// skip links and buttons
+				if (tag === "a" || tag === "button") continue;
 				const text = (el.textContent || "").trim();
 				// if the element has substantial text content, it's likely a transcript
 				if (text.length > 50) {
