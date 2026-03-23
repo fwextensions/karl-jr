@@ -151,12 +151,12 @@ export interface VideoAccessibilityIssue {
 	videoIndex: number;
 	videoSrc: string;
 	missingCaptions: boolean;
-	missingTranscript: boolean;
 }
 
 export interface VideoAccessibilityResults {
 	totalVideos: number;
 	issues: VideoAccessibilityIssue[];
+	hasTranscriptToggle: boolean;
 }
 
 /**
@@ -210,59 +210,11 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 		return false;
 	};
 
-	// check whether a transcript toggle's associated content area has real text.
-	// the toggle might exist as part of a CMS template even when no transcript
-	// was provided, so we need to verify actual content is present.
-	//
-	// returns true if content is found, or if we can't determine either way
-	// (benefit of the doubt).  Only returns false when we can positively
-	// confirm the content area is empty.
-	const hasTranscriptContent = (toggleEl: Element): boolean => {
-		// strategy 1: check if the toggle controls a specific element via
-		// aria-controls, href fragment, or data-target
-		const controlsId = toggleEl.getAttribute("aria-controls")
-			|| (toggleEl.getAttribute("href") || "").replace(/^#/, "")
-			|| (toggleEl.getAttribute("data-target") || "").replace(/^#/, "");
-
-		if (controlsId) {
-			const controlled = document.getElementById(controlsId);
-			if (controlled) {
-				const text = (controlled.textContent || "").trim();
-				// positively confirmed: content area exists and is empty
-				if (text.length === 0) return false;
-				return true;
-			}
-		}
-
-		// strategy 2: look for sibling elements with transcript-related
-		// class/id that we can check for emptiness
-		const siblings = toggleEl.parentElement
-			? Array.from(toggleEl.parentElement.children)
-			: [];
-
-		for (const sibling of siblings) {
-			if (sibling === toggleEl) continue;
-			const cls = (sibling.getAttribute("class") || "").toLowerCase();
-			const id = (sibling.getAttribute("id") || "").toLowerCase();
-
-			if (cls.includes("transcript") || id.includes("transcript")) {
-				const tag = sibling.tagName.toLowerCase();
-				// skip links and buttons — those are other toggles
-				if (tag === "a" || tag === "button") continue;
-				const text = (sibling.textContent || "").trim();
-				// positively confirmed: transcript area exists and is empty
-				if (text.length === 0) return false;
-				return true;
-			}
-		}
-
-		// can't determine — give benefit of the doubt since the toggle exists
-		return true;
-	};
-
-	// check if a transcript link or toggle exists near a video element
-	// and that it points to actual transcript content
-	const hasTranscriptToggle = (videoEl: Element): boolean => {
+	// check if a transcript toggle exists near a video element.  The SF.gov
+	// CMS requires a transcript field when adding a video, so the toggle is
+	// always present — we can't programmatically verify transcript quality,
+	// only detect that the toggle exists.
+	const findTranscriptToggle = (videoEl: Element): boolean => {
 		const searchContainers: Element[] = [];
 
 		if (videoEl.parentElement) {
@@ -274,7 +226,6 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 			searchContainers.push(wrapper);
 		}
 
-		// also check the wrapper's parent for cases where the toggle is a sibling
 		if (wrapper?.parentElement) {
 			searchContainers.push(wrapper.parentElement);
 		}
@@ -291,37 +242,13 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 				const className = (el.getAttribute("class") || "").toLowerCase();
 				const id = (el.getAttribute("id") || "").toLowerCase();
 
-				const isTranscriptToggle =
+				if (
 					text.includes("transcript") ||
-					text.includes("show transcript") ||
-					text.includes("view transcript") ||
-					text.includes("video transcript") ||
 					ariaLabel.includes("transcript") ||
 					title.includes("transcript") ||
 					className.includes("transcript") ||
-					id.includes("transcript");
-
-				if (isTranscriptToggle) {
-					// found a toggle — but does it have real content behind it?
-					if (hasTranscriptContent(el)) {
-						return true;
-					}
-					// toggle exists but no content — keep searching other
-					// containers in case the content is further up the DOM
-				}
-			}
-
-			// also check for static transcript content (already visible)
-			const transcriptElements = container.querySelectorAll(
-				"[class*='transcript'], [id*='transcript']"
-			);
-			for (const el of Array.from(transcriptElements)) {
-				const tag = el.tagName.toLowerCase();
-				// skip links and buttons
-				if (tag === "a" || tag === "button") continue;
-				const text = (el.textContent || "").trim();
-				// if the element has some real text content, it's likely a transcript
-				if (text.length > 10) {
+					id.includes("transcript")
+				) {
 					return true;
 				}
 			}
@@ -338,17 +265,17 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 		return !video.closest("header") && !video.closest("footer");
 	});
 
+	// track whether any video has a transcript toggle
+	let anyTranscriptToggle = false;
+
 	contentVideos.forEach((video, index) => {
 		let missingCaptions = false;
-		let missingTranscript = false;
 		let videoSrc = "";
 
 		if (video.tagName.toLowerCase() === "video") {
-			// check for <video> element
 			const videoElement = video as HTMLVideoElement;
 			videoSrc = videoElement.src || videoElement.currentSrc || "embedded video";
 
-			// check for captions via <track> elements
 			const tracks = Array.from(videoElement.querySelectorAll("track"));
 			const hasTrackCaptions = tracks.some(track => {
 				const kind = track.getAttribute("kind");
@@ -356,7 +283,6 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 			});
 
 			if (!hasTrackCaptions) {
-				// check for a CC toggle button in the video player's container
 				const playerContainer = video.closest(
 					"[class*='player'], [class*='video'], figure, .wp-block-video"
 				) || video.parentElement;
@@ -366,33 +292,21 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 				}
 			}
 		} else if (video.tagName.toLowerCase() === "iframe") {
-			// check for iframe (YouTube, Vimeo, etc.)
 			const iframe = video as HTMLIFrameElement;
 			videoSrc = iframe.src || "embedded video";
 			const src = iframe.src.toLowerCase();
 
 			if (src.includes("youtube")) {
-				// YouTube: cc_load_policy=1 forces captions on.  Otherwise, captions
-				// are still available via the player's built-in CC button, so we
-				// don't flag YouTube embeds as missing captions — the toggle is
-				// always present in the YouTube player UI.
-				// (no action needed — YouTube always provides a CC button)
+				// YouTube always provides a CC button — no action needed
 			} else if (src.includes("vimeo")) {
-				// Vimeo embeds include a CC button when captions are available.
-				// We can't inspect inside the iframe, but we check for a CC toggle
-				// in the surrounding container in case a custom player wraps it.
 				const playerContainer = video.closest(
 					"[class*='player'], [class*='video'], figure"
 				) || video.parentElement;
 
-				if (playerContainer && hasCaptionToggle(playerContainer)) {
-					// found a caption toggle outside the iframe
-				} else {
-					// can't confirm captions — flag for manual review
+				if (!playerContainer || !hasCaptionToggle(playerContainer)) {
 					missingCaptions = true;
 				}
 			} else {
-				// unknown iframe video provider — check for a CC toggle nearby
 				const playerContainer = video.closest(
 					"[class*='player'], [class*='video'], figure"
 				) || video.parentElement;
@@ -403,21 +317,19 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 			}
 		}
 
-		// check for transcript toggle or content near the video
-		if (!hasTranscriptToggle(video)) {
-			missingTranscript = true;
+		// check for transcript toggle near the video
+		if (findTranscriptToggle(video)) {
+			anyTranscriptToggle = true;
 		}
 
-		// if video has any issues, add to results
-		if (missingCaptions || missingTranscript) {
-			// mark the video for highlighting
+		// only add to issues if captions are missing
+		if (missingCaptions) {
 			video.setAttribute("data-a11y-video-issue", "true");
 
 			issues.push({
 				videoIndex: index + 1,
-				videoSrc: videoSrc.substring(0, 100), // truncate long URLs
+				videoSrc: videoSrc.substring(0, 100),
 				missingCaptions,
-				missingTranscript,
 			});
 		}
 	});
@@ -425,6 +337,7 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 	return {
 		totalVideos: contentVideos.length,
 		issues,
+		hasTranscriptToggle: anyTranscriptToggle,
 	};
 }
 
