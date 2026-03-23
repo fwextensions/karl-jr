@@ -160,116 +160,11 @@ export interface VideoAccessibilityResults {
 }
 
 /**
- * check if a video player container has a CC/closed captions toggle button
- * looks for buttons labeled "CC", "closed captions", "captions", or with
- * common caption-related attributes within the video player
- */
-function hasCaptionToggle(container: Element): boolean {
-	// look for buttons or clickable elements with caption-related text/attributes
-	const candidates = Array.from(container.querySelectorAll(
-		"button, [role='button'], [class*='caption'], [class*='cc'], [class*='subtitle'], [aria-label*='caption'], [aria-label*='Caption'], [aria-label*='CC'], [aria-label*='subtitle'], [aria-label*='Subtitle'], [title*='caption'], [title*='Caption'], [title*='CC'], [title*='subtitle'], [title*='Subtitle']"
-	));
-
-	for (const el of candidates) {
-		const text = (el.textContent || "").trim().toLowerCase();
-		const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
-		const title = (el.getAttribute("title") || "").toLowerCase();
-		const className = (el.getAttribute("class") || "").toLowerCase();
-
-		// match common caption button patterns
-		if (
-			text === "cc" ||
-			text === "closed captions" ||
-			text === "captions" ||
-			text === "subtitles" ||
-			ariaLabel.includes("caption") ||
-			ariaLabel.includes("subtitle") ||
-			ariaLabel.includes("closed caption") ||
-			title.includes("caption") ||
-			title.includes("subtitle") ||
-			className.includes("captions-button") ||
-			className.includes("cc-button") ||
-			className.includes("subtitles-button")
-		) {
-			return true;
-		}
-	}
-
-	return false;
-}
-
-/**
- * check if a transcript link or toggle exists near a video element
- * looks for links/buttons labeled "Show transcript", "Transcript", etc.
- * within the video's parent container or nearby siblings
- */
-function hasTranscriptToggle(video: Element): boolean {
-	// search progressively wider containers around the video
-	const searchContainers: Element[] = [];
-
-	// start with the video's direct parent
-	if (video.parentElement) {
-		searchContainers.push(video.parentElement);
-	}
-
-	// then the nearest wrapping div/section/article
-	const wrapper = video.parentElement?.closest("div, section, article, figure");
-	if (wrapper) {
-		searchContainers.push(wrapper);
-	}
-
-	// also check the wrapper's parent (for cases where the toggle is a sibling
-	// of the video's container rather than inside it)
-	if (wrapper?.parentElement) {
-		searchContainers.push(wrapper.parentElement);
-	}
-
-	for (const container of searchContainers) {
-		// look for links and buttons with transcript-related text
-		const clickables = Array.from(container.querySelectorAll(
-			"a, button, [role='button'], [class*='transcript'], [id*='transcript']"
-		));
-
-		for (const el of clickables) {
-			const text = (el.textContent || "").trim().toLowerCase();
-			const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
-			const title = (el.getAttribute("title") || "").toLowerCase();
-			const className = (el.getAttribute("class") || "").toLowerCase();
-			const id = (el.getAttribute("id") || "").toLowerCase();
-
-			if (
-				text.includes("transcript") ||
-				text.includes("show transcript") ||
-				text.includes("view transcript") ||
-				text.includes("video transcript") ||
-				ariaLabel.includes("transcript") ||
-				title.includes("transcript") ||
-				className.includes("transcript") ||
-				id.includes("transcript")
-			) {
-				return true;
-			}
-		}
-
-		// also check for static transcript content (already visible)
-		const transcriptElements = container.querySelectorAll(
-			"[class*='transcript'], [id*='transcript']"
-		);
-		for (const el of Array.from(transcriptElements)) {
-			const text = (el.textContent || "").trim();
-			// if the element has substantial text content, it's likely a transcript
-			if (text.length > 50) {
-				return true;
-			}
-		}
-	}
-
-	return false;
-}
-
-/**
  * check all videos on the page for accessibility requirements
  * this function runs in the page context via chrome.scripting.executeScript
+ *
+ * all helper functions are inlined because executeScript serializes only
+ * the target function — module-level helpers are not available at runtime
  *
  * for captions, checks:
  * - <track> elements with kind="captions" or kind="subtitles"
@@ -282,6 +177,99 @@ function hasTranscriptToggle(video: Element): boolean {
  * - text containing "transcript" keyword in the video's container
  */
 export function checkVideoAccessibility(): VideoAccessibilityResults {
+	// check if a video player container has a CC/closed captions toggle button
+	const hasCaptionToggle = (container: Element): boolean => {
+		const candidates = Array.from(container.querySelectorAll(
+			"button, [role='button'], [class*='caption'], [class*='cc'], [class*='subtitle'], [aria-label*='caption'], [aria-label*='Caption'], [aria-label*='CC'], [aria-label*='subtitle'], [aria-label*='Subtitle'], [title*='caption'], [title*='Caption'], [title*='CC'], [title*='subtitle'], [title*='Subtitle']"
+		));
+
+		for (const el of candidates) {
+			const text = (el.textContent || "").trim().toLowerCase();
+			const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
+			const title = (el.getAttribute("title") || "").toLowerCase();
+			const className = (el.getAttribute("class") || "").toLowerCase();
+
+			if (
+				text === "cc" ||
+				text === "closed captions" ||
+				text === "captions" ||
+				text === "subtitles" ||
+				ariaLabel.includes("caption") ||
+				ariaLabel.includes("subtitle") ||
+				ariaLabel.includes("closed caption") ||
+				title.includes("caption") ||
+				title.includes("subtitle") ||
+				className.includes("captions-button") ||
+				className.includes("cc-button") ||
+				className.includes("subtitles-button")
+			) {
+				return true;
+			}
+		}
+
+		return false;
+	};
+
+	// check if a transcript link or toggle exists near a video element
+	const hasTranscriptToggle = (videoEl: Element): boolean => {
+		const searchContainers: Element[] = [];
+
+		if (videoEl.parentElement) {
+			searchContainers.push(videoEl.parentElement);
+		}
+
+		const wrapper = videoEl.parentElement?.closest("div, section, article, figure");
+		if (wrapper) {
+			searchContainers.push(wrapper);
+		}
+
+		// also check the wrapper's parent for cases where the toggle is a sibling
+		if (wrapper?.parentElement) {
+			searchContainers.push(wrapper.parentElement);
+		}
+
+		for (const container of searchContainers) {
+			const clickables = Array.from(container.querySelectorAll(
+				"a, button, [role='button'], [class*='transcript'], [id*='transcript']"
+			));
+
+			for (const el of clickables) {
+				const text = (el.textContent || "").trim().toLowerCase();
+				const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
+				const title = (el.getAttribute("title") || "").toLowerCase();
+				const className = (el.getAttribute("class") || "").toLowerCase();
+				const id = (el.getAttribute("id") || "").toLowerCase();
+
+				if (
+					text.includes("transcript") ||
+					text.includes("show transcript") ||
+					text.includes("view transcript") ||
+					text.includes("video transcript") ||
+					ariaLabel.includes("transcript") ||
+					title.includes("transcript") ||
+					className.includes("transcript") ||
+					id.includes("transcript")
+				) {
+					return true;
+				}
+			}
+
+			// also check for static transcript content (already visible)
+			const transcriptElements = container.querySelectorAll(
+				"[class*='transcript'], [id*='transcript']"
+			);
+			for (const el of Array.from(transcriptElements)) {
+				const text = (el.textContent || "").trim();
+				// if the element has substantial text content, it's likely a transcript
+				if (text.length > 50) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	};
+
 	const videos = Array.from(document.querySelectorAll("video, iframe[src*='youtube'], iframe[src*='vimeo']"));
 	const issues: VideoAccessibilityIssue[] = [];
 
