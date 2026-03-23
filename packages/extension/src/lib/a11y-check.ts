@@ -224,8 +224,8 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 			const controlled = document.getElementById(controlsId);
 			if (controlled) {
 				const text = (controlled.textContent || "").trim();
-				// need substantial text — short labels don't count
-				return text.length > 50;
+				// need some real text — filter out empty/whitespace-only content
+				return text.length > 10;
 			}
 		}
 
@@ -241,7 +241,7 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 			const id = (sibling.getAttribute("id") || "").toLowerCase();
 			if (cls.includes("transcript") || id.includes("transcript")) {
 				const text = (sibling.textContent || "").trim();
-				if (text.length > 50) return true;
+				if (text.length > 10) return true;
 			}
 		}
 
@@ -256,7 +256,7 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 			// skip links and buttons — those are toggles, not content
 			if (tag === "a" || tag === "button") continue;
 			const text = (area.textContent || "").trim();
-			if (text.length > 50) return true;
+			if (text.length > 10) return true;
 		}
 
 		return false;
@@ -322,8 +322,8 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 				// skip links and buttons
 				if (tag === "a" || tag === "button") continue;
 				const text = (el.textContent || "").trim();
-				// if the element has substantial text content, it's likely a transcript
-				if (text.length > 50) {
+				// if the element has some real text content, it's likely a transcript
+				if (text.length > 10) {
 					return true;
 				}
 			}
