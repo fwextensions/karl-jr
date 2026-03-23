@@ -213,7 +213,11 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 	// check whether a transcript toggle's associated content area has real text.
 	// the toggle might exist as part of a CMS template even when no transcript
 	// was provided, so we need to verify actual content is present.
-	const hasTranscriptContent = (toggleEl: Element, container: Element): boolean => {
+	//
+	// returns true if content is found, or if we can't determine either way
+	// (benefit of the doubt).  Only returns false when we can positively
+	// confirm the content area is empty.
+	const hasTranscriptContent = (toggleEl: Element): boolean => {
 		// strategy 1: check if the toggle controls a specific element via
 		// aria-controls, href fragment, or data-target
 		const controlsId = toggleEl.getAttribute("aria-controls")
@@ -224,55 +228,36 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 			const controlled = document.getElementById(controlsId);
 			if (controlled) {
 				const text = (controlled.textContent || "").trim();
-				// need some real text — filter out empty/whitespace-only content
-				return text.length > 10;
+				// positively confirmed: content area exists and is empty
+				if (text.length === 0) return false;
+				return true;
 			}
 		}
 
-		// strategy 2: look for a sibling or nearby element that holds transcript
-		// text.  Check ALL siblings, not just ones with transcript-related
-		// classes, because the CMS may use generic divs for the content panel.
+		// strategy 2: look for sibling elements with transcript-related
+		// class/id that we can check for emptiness
 		const siblings = toggleEl.parentElement
 			? Array.from(toggleEl.parentElement.children)
 			: [];
 
 		for (const sibling of siblings) {
 			if (sibling === toggleEl) continue;
-			const tag = sibling.tagName.toLowerCase();
-			// skip interactive elements — those are other toggles/links
-			if (tag === "a" || tag === "button") continue;
 			const cls = (sibling.getAttribute("class") || "").toLowerCase();
 			const id = (sibling.getAttribute("id") || "").toLowerCase();
 
-			// prioritize elements with transcript-related attributes
 			if (cls.includes("transcript") || id.includes("transcript")) {
+				const tag = sibling.tagName.toLowerCase();
+				// skip links and buttons — those are other toggles
+				if (tag === "a" || tag === "button") continue;
 				const text = (sibling.textContent || "").trim();
-				if (text.length > 10) return true;
-			}
-
-			// also check generic hidden/collapsed divs that might be the
-			// transcript panel (hidden via display:none, aria-hidden, etc.)
-			if (tag === "div" || tag === "section") {
-				const text = (sibling.textContent || "").trim();
-				if (text.length > 10) return true;
+				// positively confirmed: transcript area exists and is empty
+				if (text.length === 0) return false;
+				return true;
 			}
 		}
 
-		// strategy 3: search the wider container for transcript content elements
-		const transcriptAreas = Array.from(container.querySelectorAll(
-			"[class*='transcript'], [id*='transcript']"
-		));
-		for (const area of transcriptAreas) {
-			// skip the toggle element itself and small label-like elements
-			if (area === toggleEl || area.contains(toggleEl)) continue;
-			const tag = area.tagName.toLowerCase();
-			// skip links and buttons — those are toggles, not content
-			if (tag === "a" || tag === "button") continue;
-			const text = (area.textContent || "").trim();
-			if (text.length > 10) return true;
-		}
-
-		return false;
+		// can't determine — give benefit of the doubt since the toggle exists
+		return true;
 	};
 
 	// check if a transcript link or toggle exists near a video element
@@ -318,7 +303,7 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 
 				if (isTranscriptToggle) {
 					// found a toggle — but does it have real content behind it?
-					if (hasTranscriptContent(el, container)) {
+					if (hasTranscriptContent(el)) {
 						return true;
 					}
 					// toggle exists but no content — keep searching other
