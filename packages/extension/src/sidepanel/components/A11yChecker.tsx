@@ -311,54 +311,54 @@ const VideoAccessibilityResultsComponent = ({ results }: { results: VideoAccessi
 		);
 	}
 	
-	if (results.issues.length === 0) {
-		return <PassMessage>All videos are accessible!</PassMessage>;
-	}
-
+	const hasCaptionIssues = results.issues.length > 0;
+	
 	return (
 		<div className="space-y-3">
-			<div className="p-3 bg-red-50 text-red-700 text-sm rounded border border-red-100">
-				Found {results.issues.length} video{results.issues.length > 1 ? "s" : ""} with accessibility issues
-			</div>
-
-			{results.issues.map((issue, index) => (
-				<div key={index} className="space-y-2">
-					<h4 className="text-sm font-semibold text-gray-700">
-						Video {issue.videoIndex}
-					</h4>
-					<div className="p-3 bg-red-50 rounded border border-red-100">
-						<ul className="space-y-1 text-sm text-gray-700">
-							{issue.missingCaptions && (
-								<li className="flex items-start gap-2">
-									<span className="text-red-600 mt-0.5">✗</span>
-									<span>Missing captions - add captions or subtitles to the video</span>
-								</li>
-							)}
-							{issue.needsManualCaptionCheck && (
-								<li className="flex items-start gap-2">
-									<span className="text-amber-600 mt-0.5">?</span>
-									<span>Captions could not be detected - verify that captions are enabled in Vimeo</span>
-								</li>
-							)}
-							{issue.missingTranscript && (
-								<li className="flex items-start gap-2">
-									<span className="text-red-600 mt-0.5">✗</span>
-									<span>Missing transcript - add a text transcript near the video</span>
-								</li>
-							)}
-						</ul>
-						{issue.videoSrc && (
-							<div className="mt-2 text-xs text-gray-500 break-all">
-								Source: {issue.videoSrc}
-							</div>
-						)}
+			{hasCaptionIssues ? (
+				<>
+					<div className="p-3 bg-red-50 text-red-700 text-sm rounded border border-red-100">
+						Found {results.issues.length} video{results.issues.length > 1 ? "s" : ""} with caption issues
 					</div>
-				</div>
-			))}
 
-			<div className="text-xs text-gray-600 italic">
-				Videos with issues are highlighted in red on the page.
-			</div>
+					{results.issues.map((issue, index) => (
+						<div key={index} className="space-y-2">
+							<h4 className="text-sm font-semibold text-gray-700">
+								Video {issue.videoIndex}
+							</h4>
+							<div className="p-3 bg-red-50 rounded border border-red-100">
+								<ul className="space-y-1 text-sm text-gray-700">
+									{issue.missingCaptions && (
+										<li className="flex items-start gap-2">
+											<span className="text-red-600 mt-0.5">✗</span>
+											<span>No captions detected - ensure the video has a CC button or embedded caption/subtitle tracks</span>
+										</li>
+									)}
+								</ul>
+								{issue.videoSrc && (
+									<div className="mt-2 text-xs text-gray-500 break-all">
+										Source: {issue.videoSrc}
+									</div>
+								)}
+							</div>
+						</div>
+					))}
+				</>
+			) : (
+				<PassMessage>Captions were detected for all videos.</PassMessage>
+			)}
+
+			{results.hasTranscriptToggle && (
+				<div className="p-3 bg-amber-50 text-amber-900 text-sm rounded border border-amber-100">
+					Videos with transcripts were detected. Please verify that each transcript accurately and completely reflects the video content.
+				</div>
+			)}
+
+			{hasCaptionIssues && (
+				<div className="text-xs text-gray-600 italic">
+					Videos with issues are highlighted in red on the page.
+				</div>
+			)}
 		</div>
 	);
 };
