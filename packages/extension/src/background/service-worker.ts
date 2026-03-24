@@ -39,22 +39,14 @@ function isSfGovDomain(url: string): boolean {
  */
 async function updateSidePanelForTab(tabId: number, url: string): Promise<void> {
 	try {
-		const isSfGov = isSfGovDomain(url);
-		
-		if (isSfGov) {
-			// enable side panel for SF.gov domains
-			await chrome.sidePanel.setOptions({
-				tabId,
-				enabled: true,
-				path: "src/sidepanel/index.html",
-			});
-		} else {
-			// disable side panel for non-SF.gov domains
-			await chrome.sidePanel.setOptions({
-				tabId,
-				enabled: false,
-			});
-		}
+		// always keep the side panel enabled so it stays open when
+		// switching between SF.gov tabs and CMS admin tabs.  The side
+		// panel UI itself handles non-SF.gov pages gracefully.
+		await chrome.sidePanel.setOptions({
+			tabId,
+			enabled: true,
+			path: "src/sidepanel/index.html",
+		});
 	} catch (err) {
 		console.error(`Side panel update error for tab ${tabId}:`, err);
 	}
@@ -97,8 +89,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason, previousVersion }) => {
 		});
 	}
 
-	// disable side panel by default for all tabs
-	void chrome.sidePanel.setOptions({ enabled: false });
+	// keep the side panel globally enabled so it persists across tab switches
+	void chrome.sidePanel.setOptions({ enabled: true });
 
 	void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 	console.log("SF.gov Companion installed");
@@ -191,13 +183,15 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
 
 /**
  * Listen for tab update events (URL changes within a tab)
+ * Only react to actual URL changes to avoid disabling the side panel
+ * during intermediate loading states (e.g. about:blank)
  */
-chrome.tabs.onUpdated.addListener(async (tabId, _changeInfo, tab) => {
-	if (!tab.url) return;
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+	if (!changeInfo.url) return;
 	
 	try {
-		await updateSidePanelForTab(tabId, tab.url);
-		await updateContextMenuVisibility(tab.url);
+		await updateSidePanelForTab(tabId, changeInfo.url);
+		await updateContextMenuVisibility(changeInfo.url);
 	} catch (err) {
 		console.error("Side panel update handling error:", err);
 	}

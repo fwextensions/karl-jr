@@ -15,13 +15,14 @@ export const PageHeader: React.FC<PageHeaderProps> = ({ pageData, currentUrl }) 
 
 	const editUrl = `https://api.sf.gov/admin/pages/${id}/edit/`;
 
-	const handleClick = () => {
+	const handleClick = async () => {
 		trackEvent("edit_button_clicked", {
 			page_id: id,
 			page_url: currentUrl,
 			trigger: "sidepanel_button",
 		});
-		window.open(editUrl, "_blank");
+
+		await chrome.tabs.create({ url: editUrl });
 	};
 
 	return (
