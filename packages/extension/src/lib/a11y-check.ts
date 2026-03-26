@@ -151,108 +151,177 @@ export interface TableAccessibilityResults {
 export interface VideoAccessibilityIssue {
 	videoIndex: number;
 	videoSrc: string;
-	missingCaptions: boolean;
-	missingTranscript: boolean;
-	needsManualCaptionCheck: boolean;
 }
 
 export interface VideoAccessibilityResults {
 	totalVideos: number;
 	issues: VideoAccessibilityIssue[];
+	hasTranscriptToggle: boolean;
 }
 
 /**
  * check all videos on the page for accessibility requirements
  * this function runs in the page context via chrome.scripting.executeScript
+ *
+ * all helper functions are inlined because executeScript serializes only
+ * the target function — module-level helpers are not available at runtime
+ *
+ * for captions, checks:
+ * - <track> elements with kind="captions" or kind="subtitles"
+ * - CC/closed captions toggle button within the video player
+ * - YouTube embeds are not flagged (CC button is always present)
+ *
+ * for transcripts, detects the "Show transcript" toggle but does not
+ * pass/fail — the SF.gov CMS requires a transcript field, so the toggle
+ * is always present.  Transcript quality must be verified manually.
  */
 export function checkVideoAccessibility(): VideoAccessibilityResults {
+	// check if a video player container has a CC/closed captions toggle button
+	const hasCaptionToggle = (container: Element): boolean => {
+		const candidates = Array.from(container.querySelectorAll(
+			"button, [role='button'], [class*='caption'], [class*='subtitle'], [aria-label*='caption'], [aria-label*='Caption'], [aria-label*='CC'], [aria-label*='subtitle'], [aria-label*='Subtitle'], [title*='caption'], [title*='Caption'], [title*='CC'], [title*='subtitle'], [title*='Subtitle']"
+		));
+
+		for (const el of candidates) {
+			const text = (el.textContent || "").trim().toLowerCase();
+			const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
+			const title = (el.getAttribute("title") || "").toLowerCase();
+			const className = (el.getAttribute("class") || "").toLowerCase();
+
+			if (
+				text === "cc" ||
+				text === "closed captions" ||
+				text === "captions" ||
+				text === "subtitles" ||
+				ariaLabel.includes("caption") ||
+				ariaLabel.includes("subtitle") ||
+				title.includes("caption") ||
+				title.includes("subtitle") ||
+				className.includes("captions-button") ||
+				className.includes("cc-button") ||
+				className.includes("subtitles-button")
+			) {
+				return true;
+			}
+		}
+
+		return false;
+	};
+
+	// check if a transcript toggle exists within the same semantic section as the video.
+	// search is bounded by the nearest section/article/figure ancestor to avoid matching
+	// transcript elements that belong to a different video further up the page.
+	const findTranscriptToggle = (videoEl: Element): boolean => {
+		const boundary = videoEl.closest("section, article, figure") || videoEl.parentElement;
+		if (!boundary) {
+			return false;
+		}
+
+		const clickables = Array.from(boundary.querySelectorAll(
+			"a, button, [role='button'], [class*='transcript'], [id*='transcript']"
+		));
+
+		for (const el of clickables) {
+			const text = (el.textContent || "").trim().toLowerCase();
+			const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
+			const title = (el.getAttribute("title") || "").toLowerCase();
+			const className = (el.getAttribute("class") || "").toLowerCase();
+			const id = (el.getAttribute("id") || "").toLowerCase();
+
+			if (
+				text.includes("transcript") ||
+				ariaLabel.includes("transcript") ||
+				title.includes("transcript") ||
+				className.includes("transcript") ||
+				id.includes("transcript")
+			) {
+				return true;
+			}
+		}
+
+		return false;
+	};
+
 	const videos = Array.from(document.querySelectorAll("video, iframe[src*='youtube'], iframe[src*='vimeo']"));
 	const issues: VideoAccessibilityIssue[] = [];
-	
+
 	// exclude videos in header and footer
 	const contentVideos = videos.filter(video => {
 		return !video.closest("header") && !video.closest("footer");
 	});
-	
+
+	// track whether any video has a transcript toggle
+	let anyTranscriptToggle = false;
+
 	contentVideos.forEach((video, index) => {
 		let missingCaptions = false;
-		let missingTranscript = false;
-		let needsManualCaptionCheck = false;
 		let videoSrc = "";
-		
+
 		if (video.tagName.toLowerCase() === "video") {
-			// check for <video> element
 			const videoElement = video as HTMLVideoElement;
 			videoSrc = videoElement.src || videoElement.currentSrc || "embedded video";
-			
-			// check for captions (track element with kind="captions" or kind="subtitles")
+
 			const tracks = Array.from(videoElement.querySelectorAll("track"));
-			const hasCaptions = tracks.some(track => {
+			const hasTrackCaptions = tracks.some(track => {
 				const kind = track.getAttribute("kind");
 				return kind === "captions" || kind === "subtitles";
 			});
-			
-			if (!hasCaptions) {
-				missingCaptions = true;
+
+			if (!hasTrackCaptions) {
+				const playerContainer = video.closest(
+					"[class*='player'], [class*='video'], figure, .wp-block-video"
+				) || video.parentElement;
+
+				if (!playerContainer || !hasCaptionToggle(playerContainer)) {
+					missingCaptions = true;
+				}
 			}
 		} else if (video.tagName.toLowerCase() === "iframe") {
-			// check for iframe (YouTube, Vimeo, etc.)
 			const iframe = video as HTMLIFrameElement;
-			videoSrc = iframe.src || "embedded video";
-			
-			// for iframes, we can't directly check for captions
-			// but we can check if the URL includes caption parameters
+			videoSrc = iframe.src;
 			const src = iframe.src.toLowerCase();
-			
-			// YouTube: check for cc_load_policy=1 or cc_lang_pref
-			// Vimeo: captions are typically enabled by default if available
-			// we'll assume iframes need manual verification and flag them
-			const hasYouTubeCaptions = src.includes("youtube") && (src.includes("cc_load_policy=1") || src.includes("cc_lang_pref"));
-			
-			if (!hasYouTubeCaptions && src.includes("youtube")) {
-				missingCaptions = true;
+
+			if (src.includes("youtube")) {
+				// YouTube always provides a CC button — no action needed
 			} else if (src.includes("vimeo")) {
-				// for Vimeo, we can't detect captions from the embed URL
-				needsManualCaptionCheck = true;
+				const playerContainer = video.closest(
+					"[class*='player'], [class*='video'], figure"
+				) || video.parentElement;
+
+				if (!playerContainer || !hasCaptionToggle(playerContainer)) {
+					missingCaptions = true;
+				}
+			} else {
+				const playerContainer = video.closest(
+					"[class*='player'], [class*='video'], figure"
+				) || video.parentElement;
+
+				if (!playerContainer || !hasCaptionToggle(playerContainer)) {
+					missingCaptions = true;
+				}
 			}
 		}
-		
-		// check for transcript
-		// look for common transcript indicators near the video
-		const parent = video.parentElement;
-		const container = parent?.closest("div, section, article") || parent;
-		
-		if (container) {
-			const containerText = container.textContent?.toLowerCase() || "";
-			const hasTranscriptKeyword = containerText.includes("transcript") || 
-				containerText.includes("video transcript") ||
-				container.querySelector("[class*='transcript'], [id*='transcript']") !== null;
-			
-			if (!hasTranscriptKeyword) {
-				missingTranscript = true;
-			}
-		} else {
-			missingTranscript = true;
+
+		// check for transcript toggle near the video
+		if (findTranscriptToggle(video)) {
+			anyTranscriptToggle = true;
 		}
-		
-		// if video has any issues, add to results
-		if (missingCaptions || missingTranscript || needsManualCaptionCheck) {
-			// mark the video for highlighting
+
+		// only add to issues if captions are missing
+		if (missingCaptions) {
 			video.setAttribute("data-a11y-video-issue", "true");
 
 			issues.push({
 				videoIndex: index + 1,
-				videoSrc: videoSrc.substring(0, 100), // truncate long URLs
-				missingCaptions,
-				missingTranscript,
-				needsManualCaptionCheck,
+				videoSrc: videoSrc.substring(0, 100),
 			});
 		}
 	});
-	
+
 	return {
 		totalVideos: contentVideos.length,
 		issues,
+		hasTranscriptToggle: anyTranscriptToggle,
 	};
 }
 

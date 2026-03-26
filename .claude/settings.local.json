@@ -11,7 +11,8 @@
       "Bash(npm run type-check --workspace=@sf-gov/extension)",
       "Bash(26™ matches next summer Get ready for an unparalleled blend...\":*)",
       "Bash(git push -u origin claude/fix-text-copy-linebreaks-TTCst)",
-      "Bash(git -C \"C:/Projects/Chrome Extensions/sf.gov Companion/sf-gov-companion\" remote get-url origin)"
+      "Bash(git -C \"C:/Projects/Chrome Extensions/sf.gov Companion/sf-gov-companion\" remote get-url origin)",
+      "Bash(node -e \":*)"
     ]
   }
 }
