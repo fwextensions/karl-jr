@@ -151,7 +151,6 @@ export interface TableAccessibilityResults {
 export interface VideoAccessibilityIssue {
 	videoIndex: number;
 	videoSrc: string;
-	missingCaptions: boolean;
 }
 
 export interface VideoAccessibilityResults {
@@ -180,7 +179,7 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 	// check if a video player container has a CC/closed captions toggle button
 	const hasCaptionToggle = (container: Element): boolean => {
 		const candidates = Array.from(container.querySelectorAll(
-			"button, [role='button'], [class*='caption'], [class*='cc'], [class*='subtitle'], [aria-label*='caption'], [aria-label*='Caption'], [aria-label*='CC'], [aria-label*='subtitle'], [aria-label*='Subtitle'], [title*='caption'], [title*='Caption'], [title*='CC'], [title*='subtitle'], [title*='Subtitle']"
+			"button, [role='button'], [class*='caption'], [class*='subtitle'], [aria-label*='caption'], [aria-label*='Caption'], [aria-label*='CC'], [aria-label*='subtitle'], [aria-label*='Subtitle'], [title*='caption'], [title*='Caption'], [title*='CC'], [title*='subtitle'], [title*='Subtitle']"
 		));
 
 		for (const el of candidates) {
@@ -196,7 +195,6 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 				text === "subtitles" ||
 				ariaLabel.includes("caption") ||
 				ariaLabel.includes("subtitle") ||
-				ariaLabel.includes("closed caption") ||
 				title.includes("caption") ||
 				title.includes("subtitle") ||
 				className.includes("captions-button") ||
@@ -210,44 +208,34 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 		return false;
 	};
 
-	// check if a transcript toggle exists near a video element
+	// check if a transcript toggle exists within the same semantic section as the video.
+	// search is bounded by the nearest section/article/figure ancestor to avoid matching
+	// transcript elements that belong to a different video further up the page.
 	const findTranscriptToggle = (videoEl: Element): boolean => {
-		const searchContainers: Element[] = [];
-
-		if (videoEl.parentElement) {
-			searchContainers.push(videoEl.parentElement);
+		const boundary = videoEl.closest("section, article, figure") || videoEl.parentElement;
+		if (!boundary) {
+			return false;
 		}
 
-		const wrapper = videoEl.parentElement?.closest("div, section, article, figure");
-		if (wrapper) {
-			searchContainers.push(wrapper);
-		}
+		const clickables = Array.from(boundary.querySelectorAll(
+			"a, button, [role='button'], [class*='transcript'], [id*='transcript']"
+		));
 
-		if (wrapper?.parentElement) {
-			searchContainers.push(wrapper.parentElement);
-		}
+		for (const el of clickables) {
+			const text = (el.textContent || "").trim().toLowerCase();
+			const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
+			const title = (el.getAttribute("title") || "").toLowerCase();
+			const className = (el.getAttribute("class") || "").toLowerCase();
+			const id = (el.getAttribute("id") || "").toLowerCase();
 
-		for (const container of searchContainers) {
-			const clickables = Array.from(container.querySelectorAll(
-				"a, button, [role='button'], [class*='transcript'], [id*='transcript']"
-			));
-
-			for (const el of clickables) {
-				const text = (el.textContent || "").trim().toLowerCase();
-				const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
-				const title = (el.getAttribute("title") || "").toLowerCase();
-				const className = (el.getAttribute("class") || "").toLowerCase();
-				const id = (el.getAttribute("id") || "").toLowerCase();
-
-				if (
-					text.includes("transcript") ||
-					ariaLabel.includes("transcript") ||
-					title.includes("transcript") ||
-					className.includes("transcript") ||
-					id.includes("transcript")
-				) {
-					return true;
-				}
+			if (
+				text.includes("transcript") ||
+				ariaLabel.includes("transcript") ||
+				title.includes("transcript") ||
+				className.includes("transcript") ||
+				id.includes("transcript")
+			) {
+				return true;
 			}
 		}
 
@@ -290,7 +278,7 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 			}
 		} else if (video.tagName.toLowerCase() === "iframe") {
 			const iframe = video as HTMLIFrameElement;
-			videoSrc = iframe.src || "embedded video";
+			videoSrc = iframe.src;
 			const src = iframe.src.toLowerCase();
 
 			if (src.includes("youtube")) {
@@ -326,7 +314,6 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 			issues.push({
 				videoIndex: index + 1,
 				videoSrc: videoSrc.substring(0, 100),
-				missingCaptions,
 			});
 		}
 	});

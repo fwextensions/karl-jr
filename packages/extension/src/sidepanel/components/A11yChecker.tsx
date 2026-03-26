@@ -276,13 +276,13 @@ const TableAccessibilityResultsComponent = ({ results }: { results: TableAccessi
 						<ul className="space-y-1 text-sm text-gray-700">
 							{issue.missingCaption && (
 								<li className="flex items-start gap-2">
-									<span className="text-red-600 mt-0.5">✗</span>
+									<span className="text-red-600 mt-0.5">&times;</span>
 									<span>Missing caption - add a title using the "Caption" field in the table editor</span>
 								</li>
 							)}
 							{issue.missingHeaders && (
 								<li className="flex items-start gap-2">
-									<span className="text-red-600 mt-0.5">✗</span>
+									<span className="text-red-600 mt-0.5">&times;</span>
 									<span>Missing header row or column - mark the first row or column as headers in the table editor</span>
 								</li>
 							)}
@@ -328,12 +328,10 @@ const VideoAccessibilityResultsComponent = ({ results }: { results: VideoAccessi
 							</h4>
 							<div className="p-3 bg-red-50 rounded border border-red-100">
 								<ul className="space-y-1 text-sm text-gray-700">
-									{issue.missingCaptions && (
-										<li className="flex items-start gap-2">
-											<span className="text-red-600 mt-0.5">✗</span>
-											<span>No captions detected - ensure the video has a CC button or embedded caption/subtitle tracks</span>
-										</li>
-									)}
+									<li className="flex items-start gap-2">
+										<span className="text-red-600 mt-0.5">&times;</span>
+										<span>No captions detected - ensure the video has a CC button or embedded caption/subtitle tracks</span>
+									</li>
 								</ul>
 								{issue.videoSrc && (
 									<div className="mt-2 text-xs text-gray-500 break-all">
@@ -345,7 +343,7 @@ const VideoAccessibilityResultsComponent = ({ results }: { results: VideoAccessi
 					))}
 				</>
 			) : (
-				<PassMessage>Captions were detected for all videos.</PassMessage>
+				!results.hasTranscriptToggle && <PassMessage>Captions were detected for all videos.</PassMessage>
 			)}
 
 			{results.hasTranscriptToggle && (
@@ -676,7 +674,7 @@ export function A11yChecker({
 				images: altText ?? [],
 				links: linkData ?? emptyLinkResults,
 				tables: tableData ?? { totalTables: 0, issues: [] },
-				videos: videoData ?? { totalVideos: 0, issues: [] },
+				videos: videoData ?? { totalVideos: 0, issues: [], hasTranscriptToggle: false },
 				readability: readability ?? null,
 			};
 
