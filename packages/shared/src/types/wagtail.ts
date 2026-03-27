@@ -13,6 +13,8 @@ export interface MediaAsset {
   filename?: string;
   altText?: string;
   isDecorative?: boolean;
+  width?: number;
+  height?: number;
 }
 
 /**

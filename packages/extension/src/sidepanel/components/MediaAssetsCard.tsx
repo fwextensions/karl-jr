@@ -124,15 +124,18 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 								const filename = getFilenameFromUrl(image.url);
 								const missingAltText = missingAltTextUrls?.has(image.url) ?? false;
 								return (
-									<li key={image.id} className="flex items-center gap-2">
+									<li key={image.id} className="flex items-start gap-2">
 										<a
 											href="#"
 											onClick={() => handleImageClick(image.id)}
-											className="text-sm text-left min-w-0 shrink inline-flex flex-row items-center gap-2 cursor-pointer bg-transparent border-none p-0"
+											className="text-sm text-left min-w-0 shrink cursor-pointer bg-transparent border-none p-0"
 											title={filename ? `Edit image: ${filename}` : `Edit image: ${image.title || "Untitled Image"}`}
 										>
-											<EditIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+											<EditIcon className="h-4 w-4 shrink-0 inline align-text-bottom mr-1" aria-hidden="true" />
 											{image.title || image.filename || "Untitled Image"}
+											{image.width && image.height && (
+												<span className={`text-xs whitespace-nowrap ml-1 inline-block no-underline decoration-0 ${image.width > 2500 || image.height > 2500 ? "text-red-500 font-bold" : "text-gray-400"}`}>{image.width}×{image.height}</span>
+											)}
 										</a>
 										{missingAltText && (
 											<span className="text-amber-600 shrink-0" title="Missing alt text">⚠️</span>

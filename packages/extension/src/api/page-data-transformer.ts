@@ -40,6 +40,8 @@ export function extractImages(pageData: any): MediaAsset[] {
 			type: 'image',
 			filename: data.filename || (data.file ? data.file.split('/').pop() : undefined),
 			isDecorative: data.is_decorative === true,
+			width: data.width || undefined,
+			height: data.height || undefined,
 		};
 	}
 
