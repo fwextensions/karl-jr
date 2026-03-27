@@ -1,6 +1,6 @@
 # Karl Jr. (SF.gov Companion Extension)
 
-![Screenshot](./docs/screenshot.png)
+![Screenshot](./docs/store/screenshot.png)
 
 A cross-browser extension that provides content management information for SF.gov pages. The extension displays a side panel when users navigate SF.gov pages, showing metadata and administrative links retrieved from the Wagtail CMS API.
 

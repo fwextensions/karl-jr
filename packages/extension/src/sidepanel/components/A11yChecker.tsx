@@ -86,11 +86,11 @@ const HeadingNestingResults = ({ issues }: { issues: HeadingNestingIssue[] }) =>
 						<div className="space-y-1 text-gray-700">
 							<div className="flex items-start gap-2">
 								<span className="font-semibold shrink-0">From:</span>
-								<span className="break-words">{issue.fromText}</span>
+								<span className="wrap-break-word">{issue.fromText}</span>
 							</div>
 							<div className="flex items-start gap-2">
 								<span className="font-semibold shrink-0">To:</span>
-								<span className="break-words bg-yellow-200 px-1">{issue.toText}</span>
+								<span className="wrap-break-word bg-yellow-200 px-1">{issue.toText}</span>
 							</div>
 						</div>
 					</div>

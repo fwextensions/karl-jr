@@ -43,9 +43,25 @@ npm run build:extension
 
 # Build server only
 npm run build:server
+```
 
-# Build and package extension for distribution
-npm run release:extension
+### Releasing
+
+```bash
+# Interactive release: bumps version, builds, tags, and pushes
+npm run release
+```
+
+The release script (`scripts/release.js`) accepts `patch`, `minor`, `major`, or an explicit version string.  It must be run from the `main` branch with a clean working tree.
+
+### Testing
+
+```bash
+# Run extension tests
+npm test --workspace=@sf-gov/extension
+
+# Run server tests
+npm test --workspace=@sf-gov/server
 ```
 
 ### Type Checking
@@ -75,82 +91,113 @@ npm run <script> --workspace=@sf-gov/extension
 
 ### Extension Architecture
 
-The extension has three main components:
+The extension has four main components:
 
 1. **Background Service Worker** (`src/background/service-worker.ts`)
    - Manages side panel visibility based on URL (only shows on `*.sf.gov` domains)
-   - Handles "Edit on Karl" context menu functionality
+   - Handles "Edit on Karl" context menu functionality with side panel persistence
    - Forwards messages between content scripts and side panel
    - Updates dynamically as user navigates tabs
 
 2. **Side Panel** (`src/sidepanel/`)
    - React 19 application displaying page metadata
    - Main hook: `useSfGovPage()` orchestrates all data fetching and state
-   - Components render cards for different features (metadata, feedback, link checker, etc.)
+   - Components render cards for different features (metadata, feedback, link checker, accessibility, media assets, etc.)
    - Communicates with both Wagtail API directly and proxy API for privileged operations
+   - On admin pages, displays an iframe preview of the public page
 
-3. **Content Script** (`src/content/admin-preview-monitor.ts`)
+3. **Content Script: Admin Preview Monitor** (`src/content/admin-preview-monitor.ts`)
    - Injected into `api.sf.gov/admin/*` pages
    - Monitors the Wagtail preview button state using MutationObserver
    - Forwards preview URL updates to side panel via background worker
    - Includes retry logic and exponential backoff for button detection
 
+4. **Content Script: Next Data Extractor** (`src/content/next-data-extractor.ts`)
+   - Injected into public `*.sf.gov` pages (excluding `api.sf.gov`)
+   - Extracts page data from the `__NEXT_DATA__` script tag in the DOM
+   - Transforms raw data into `WagtailPage` objects via `page-data-transformer.ts`
+   - Sends extracted data to the side panel via the background worker
+   - Responds to `REQUEST_PAGE_DATA` messages for on-demand re-extraction
+
 ### Server Architecture
 
-The server provides two Vercel serverless endpoints:
+The server provides these Vercel serverless endpoints:
 
-1. **`/api/feedback`** - Proxies user feedback data from Airtable
-   - Requires Wagtail session authentication
-   - Uses Redis (Upstash) for caching feedback data (2hr TTL) and sessions (5min TTL)
+1. **`/api/auth/token`** - JWT token exchange endpoint
+   - Accepts Wagtail session ID via `X-Wagtail-Session` header
+   - Validates session against Wagtail API
+   - Returns a signed JWT companion token (HS256, configurable TTL)
+   - Session validation cached in Redis (5min TTL)
+
+2. **`/api/feedback`** - Proxies user feedback data from Airtable
+   - Requires companion JWT token authentication (via `Authorization: Bearer` header)
+   - Uses Redis (Upstash) for caching feedback data (2hr TTL)
    - Fetches all records matching page path with pagination
    - Calculates helpful/not-helpful statistics
 
-2. **`/api/link-check`** - Server-side link validation with SSE streaming
+3. **`/api/link-check`** - Server-side link validation with SSE streaming
    - Validates HTTP/HTTPS links and streams results via Server-Sent Events
-   - Requires Wagtail session authentication
+   - Requires companion JWT token authentication
    - Rate limiting: max 10 concurrent requests, 100ms delay per domain
    - Retry logic: 2 retries with exponential backoff (100ms, 200ms)
    - 60 second maximum execution time
    - Handles mixed content detection, redirects, SSL errors
    - Special handling for twitter.com/x.com domains
 
+4. **`/api/health`** - Health check endpoint
+
 ### API Client Architecture
 
-- **`wagtail-client.ts`** - Direct Wagtail API calls from extension
+- **`wagtail-client.ts`** - Direct Wagtail API calls from extension (fallback path)
   - Auto-detects production vs staging based on current URL
   - Finds pages by ID or slug with translation support
   - Extracts images, files, and metadata recursively
   - 10-second timeout with AbortController
   - Custom headers: `User-Agent: SF-Gov-Companion-Extension/1.0` and `X-SF-Gov-Extension: companion`
 
-- **`airtable-client.ts`** - Calls proxy for feedback data
+- **`page-data-transformer.ts`** - Transforms `__NEXT_DATA__` page props into `WagtailPage` objects (primary data path)
+  - Extracts images, files, translations, agencies, form schemas, and form confirmations
+  - Handles production and staging admin URL generation
 
-- **`link-check-client.ts`** - SSE client for link checking
-  - Handles EventSource connection with proper error handling
-  - Passes Wagtail session via custom header
+- **`auth.ts`** - Token lifecycle management
+  - Exchanges Wagtail session cookie for companion JWT token
+  - Caches tokens in both memory and `chrome.storage.session`
+  - Proactive refresh 60 seconds before expiry
+
+- **`airtable-client.ts`** - Calls proxy for feedback data (uses companion token)
+
+- **`link-check-client.ts`** - SSE client for link checking (uses companion token)
 
 ### Authentication Flow
 
-1. Extension reads `sessionid` cookie from `api.sf.gov`
-2. Extension sends session ID in `X-Wagtail-Session` header to server endpoints
-3. Server validates session by making authenticated request to Wagtail API `/pages` endpoint
-4. Session validation is cached in Redis for 5 minutes to reduce load
+1. Extension reads `sessionid` cookie from `api.sf.gov` via `chrome.cookies` API
+2. Extension calls `POST /api/auth/token` with session ID in `X-Wagtail-Session` header
+3. Server validates session against Wagtail API, returns signed JWT
+4. Extension caches JWT in memory and `chrome.storage.session`
+5. Subsequent API calls use `Authorization: Bearer <token>` header
+6. Token is proactively refreshed 60 seconds before expiry
+7. On 401 responses, cached token is cleared and re-exchanged
 
 ### Environment Configuration
 
 **Extension** (`.env.local` for local dev):
 ```
 VITE_API_BASE_URL=http://localhost:3000
+VITE_POSTHOG_API_KEY=<optional, leave empty to disable analytics>
 ```
 
 **Server** (`.env`):
 ```
-WAGTAIL_API_URL=https://api.sf.gov/api/v2/
+WAGTAIL_API_URL=https://api.sf.gov/admin
+TOKEN_SIGNING_SECRET=<HS256 signing key, min 32 chars>
+TOKEN_TTL_SECONDS=900
 AIRTABLE_API_KEY=<key>
 AIRTABLE_BASE_ID=<id>
 AIRTABLE_TABLE_NAME=<name>
 UPSTASH_REDIS_REST_URL=<url>
 UPSTASH_REDIS_REST_TOKEN=<token>
+SESSION_CACHE_TTL=300
+WAGTAIL_VALIDATION_TIMEOUT=5000
 ```
 
 ## Key Technical Details
@@ -158,9 +205,12 @@ UPSTASH_REDIS_REST_TOKEN=<token>
 ### Chrome Extension Manifest V3
 
 - Uses `sidePanel` API for side panel UI
-- Requires permissions: `sidePanel`, `tabs`, `scripting`, `cookies`, `contextMenus`
+- Requires permissions: `sidePanel`, `tabs`, `scripting`, `cookies`, `contextMenus`, `storage`
 - Host permissions for `*.sf.gov/*`, `api.sf.gov/*`, `api.staging.dev.sf.gov/*`
-- Content script runs on admin pages (`api.sf.gov/admin/*`) to monitor preview button
+- Two content scripts:
+  - Admin preview monitor on `api.sf.gov/admin/*` and staging equivalent
+  - Next data extractor on `*.sf.gov/*` (excluding `api.sf.gov/*`)
+- Keyboard shortcut: `Alt+K` (Windows) / `Ctrl+K` (Mac) to open side panel
 
 ### TypeScript Configuration
 
@@ -209,14 +259,15 @@ When modifying link checker functionality, be aware of these requirements:
 
 ### Windows Performance Issue
 
-`vercel dev` has significant performance issues on Windows (5+ second response delays) due to a libuv bug. Use the lightweight Node dev server instead: `cd packages/server && npm run dev`
+`vercel dev` has significant performance issues on Windows (5+ second response delays) due to a libuv bug.  Use the lightweight Node dev server instead: `cd packages/server && npm run dev`
 
 ### Shared Types Package
 
 The `@sf-gov/shared` package exports TypeScript types used by both extension and server:
-- Wagtail API types (`WagtailPage`, `MediaAsset`, `Translation`, etc.)
+- Wagtail API types (`WagtailPage`, `MediaAsset`, `Translation`, `Agency`, `FormSchema`, etc.)
 - Airtable API types (`FeedbackRecord`, `FeedbackResponse`, etc.)
 - Link check types (`LinkCheckRequest`, `LinkCheckResultEvent`, etc.)
+- Auth types (`TokenResponse`, `TokenErrorResponse`)
 
 Changes to shared types require rebuilding the shared package or restarting TypeScript in your editor.
 
@@ -227,6 +278,10 @@ All requests to `api.sf.gov` include these headers for logging:
 - `X-SF-Gov-Extension: companion`
 
 These are sent in extension → Wagtail API calls and server → Wagtail API calls.
+
+### Analytics
+
+The extension uses PostHog for analytics (`src/lib/analytics.ts`).  Analytics are disabled when `VITE_POSTHOG_API_KEY` is not set.  Events are tracked for side panel views, edit button clicks, context menu usage, and errors.
 
 ## Code Style Guidelines
 
@@ -243,8 +298,8 @@ Based on `.kiro/steering/tech.md`:
 - Generally use functional and declarative programming patterns; use classes if it makes sense to manage many instances
 - Prefer iteration and modularization over code duplication
 - Use descriptive variable names with auxiliary verbs (e.g., `isLoading`, `hasError`)
-- In comments, start with a lowercase letter and do not end with a period unless the comment contains multiple sentences. If a period is included, use two spaces after the period.
-- When writing commit messages, use the present tense. Use a summary line, then a blank line, then a fairly detailed list of changes. The commit message should almost never be a single line.
+- In comments, start with a lowercase letter and do not end with a period unless the comment contains multiple sentences.  If a period is included, use two spaces after the period.
+- When writing commit messages, use the present tense.  Use a summary line, then a blank line, then a fairly detailed list of changes.  The commit message should almost never be a single line.
 
 ## Target Users
 
@@ -252,13 +307,17 @@ Content managers and administrators working with SF.gov's Wagtail CMS who need q
 
 ## Detailed Feature Specifications
 
-Feature specifications and requirements are documented in `.kiro/specs/`. Key implemented features:
+Feature specifications and requirements are documented in `.kiro/specs/`.  Key implemented features:
 
 - **Domain-based side panel visibility** - Side panel only appears on `*.sf.gov` domains
+- **`__NEXT_DATA__` page extraction** - Primary data source via content script DOM extraction
 - **Admin preview integration** - Content script monitors preview button state in Wagtail admin
+- **Edit with side panel persistence** - Edit button opens admin in adjacent tab with side panel kept open
 - **Airtable feedback integration** - Displays user feedback from Airtable with caching
 - **Server-side link checking** - SSE-based link validation with rate limiting and retry logic
-- **Wagtail session caching** - Redis-based caching of authentication validation (5min TTL)
+- **Token exchange authentication** - JWT-based auth flow replacing direct session passing
+- **Accessibility checker** - Client-side image alt text validation
+- **PostHog analytics** - Event tracking for usage patterns and errors
 - **Monorepo structure** - Three-package workspace setup with shared types
 
 When working on new features or investigating bugs, consult the relevant spec documents in `.kiro/specs/` for detailed requirements and design decisions.
