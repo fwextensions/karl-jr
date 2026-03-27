@@ -343,7 +343,7 @@ const VideoAccessibilityResultsComponent = ({ results }: { results: VideoAccessi
 					))}
 				</>
 			) : (
-				!results.hasTranscriptToggle && <PassMessage>Captions were detected for all videos.</PassMessage>
+				<PassMessage>Captions were detected for all videos.</PassMessage>
 			)}
 
 			{results.hasTranscriptToggle && (
