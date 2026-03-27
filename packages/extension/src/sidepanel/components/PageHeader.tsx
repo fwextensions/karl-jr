@@ -15,13 +15,30 @@ export const PageHeader: React.FC<PageHeaderProps> = ({ pageData, currentUrl }) 
 
 	const editUrl = `https://api.sf.gov/admin/pages/${id}/edit/`;
 
-	const handleClick = () => {
+	const handleClick = async () => {
 		trackEvent("edit_button_clicked", {
 			page_id: id,
 			page_url: currentUrl,
 			trigger: "sidepanel_button",
 		});
-		window.open(editUrl, "_blank");
+		// get the current tab so we can place the new tab next to it
+		const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+		const createOptions: chrome.tabs.CreateProperties = { url: editUrl };
+		if (currentTab?.index !== undefined) {
+			createOptions.index = currentTab.index + 1;
+		}
+		// create the tab and open the side panel on it directly from the
+		// click handler so we retain the user gesture context that
+		// chrome.sidePanel.open() requires
+		const newTab = await chrome.tabs.create(createOptions);
+		if (newTab.id) {
+			await chrome.sidePanel.setOptions({
+				tabId: newTab.id,
+				enabled: true,
+				path: "src/sidepanel/index.html",
+			});
+			await chrome.sidePanel.open({ tabId: newTab.id });
+		}
 	};
 
 	return (

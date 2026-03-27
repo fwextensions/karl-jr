@@ -61,6 +61,40 @@ async function updateSidePanelForTab(tabId: number, url: string): Promise<void> 
 }
 
 /**
+ * Open a URL in a new tab with the side panel enabled.
+ * If called from a user gesture context (e.g. context menu click),
+ * pass openPanel=true to also programmatically open the side panel.
+ * chrome.sidePanel.open() requires a user gesture, so it can't be
+ * used from async message handlers.
+ * @param url - The URL to open
+ * @param sourceTab - The tab that triggered the action, used for positioning
+ * @param openPanel - Whether to call sidePanel.open() (requires user gesture)
+ */
+async function openTabWithSidePanel(
+	url: string,
+	sourceTab?: chrome.tabs.Tab,
+	openPanel = false
+): Promise<void> {
+	const createOptions: chrome.tabs.CreateProperties = { url };
+	if (sourceTab?.index !== undefined) {
+		createOptions.index = sourceTab.index + 1;
+	}
+	const newTab = await chrome.tabs.create(createOptions);
+	if (newTab.id) {
+		// enable the side panel on the new tab so it stays visible
+		// when the user switches to it
+		await chrome.sidePanel.setOptions({
+			tabId: newTab.id,
+			enabled: true,
+			path: "src/sidepanel/index.html",
+		});
+		if (openPanel) {
+			await chrome.sidePanel.open({ tabId: newTab.id });
+		}
+	}
+}
+
+/**
  * Update context menu visibility based on the URL
  * Can't use negative lookups in documentUrlPatterns, so we handle it here
  */
@@ -157,7 +191,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 				if (data) {
 					const editUrl = `https://api.sf.gov/admin/pages/${data.id}/edit/`;
 
-					await chrome.tabs.create({ url: editUrl });
+					await openTabWithSidePanel(editUrl, tab, true);
 				}
 			} catch (e) {
 				console.error(e);
@@ -204,7 +238,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, _changeInfo, tab) => {
 });
 
 /**
- * Listen for messages from content script and forward to side panel
+ * Listen for messages from content scripts and forward to side panel
  */
 chrome.runtime.onMessage.addListener((message, sender) => {
 	// only process messages from content scripts

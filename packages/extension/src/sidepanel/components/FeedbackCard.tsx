@@ -71,7 +71,7 @@ const FeedbackItem: React.FC<FeedbackItemProps> = ({ record }) => {
 			{record.additionalDetails && (
 				<div className="text-sm mb-2">
 					<span className="font-medium text-gray-700">Details: </span>
-					<span className="text-gray-900">{record.additionalDetails}</span>
+					<span className="text-gray-900 break-all">{record.additionalDetails}</span>
 				</div>
 			)}
 
