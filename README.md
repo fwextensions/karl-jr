@@ -4,6 +4,14 @@
 
 A cross-browser extension that provides content management information for SF.gov pages. The extension displays a side panel when users navigate SF.gov pages, showing metadata and administrative links retrieved from the Wagtail CMS API.
 
+
+## Installation
+
+Install the production version from the [Chrome webstore](https://chromewebstore.google.com/detail/karl-jr/mocphfhbfgcmiddcelbplacgdbjikbgo).
+
+Or download the [nightly build](https://github.com/fwextensions/karl-jr/releases/download/nightly/karl-jr-latest.zip) and load it into Chrome as an unpacked extension.
+
+
 ## Monorepo Structure
 
 This project is organized as an npm workspaces monorepo with three packages:

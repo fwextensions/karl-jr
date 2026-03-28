@@ -17,6 +17,19 @@ const getFilenameFromUrl = (url: string): string => {
 	}
 };
 
+interface DocumentItem {
+	key: string;
+	url: string;
+	label: string;
+	sublabel: string | null;
+	editHref: string;
+	onEditClick?: React.MouseEventHandler<HTMLAnchorElement>;
+	onOpenClick?: React.MouseEventHandler<HTMLAnchorElement>;
+	editTitle: string;
+	openTitle: string;
+	showEditIcon: boolean;
+}
+
 interface MediaAssetsCardProps {
 	images: MediaAsset[];
 	files: MediaAsset[];
@@ -97,6 +110,78 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 		});
 	};
 
+	const renderDocumentList = () => {
+		const fileItems: DocumentItem[] = files.map((file) => {
+			const filename = getFilenameFromUrl(file.url);
+			const label = file.title || file.filename || "Untitled File";
+			const sublabel = (file.filename && file.title && file.title !== file.filename)
+				? file.filename
+				: null;
+			return {
+				key: `file-${file.id}`,
+				url: file.url,
+				label,
+				sublabel,
+				editHref: "#",
+				onEditClick: () => handleFileClick(file.id),
+				editTitle: filename ? `Edit document: ${filename}` : `Edit document: ${label}`,
+				openTitle: filename ? `Open document: ${filename}` : `Open document: ${label}`,
+				showEditIcon: true,
+			};
+		});
+
+		const linkItems: DocumentItem[] = documentLinks.map((docLink) => {
+			const filename = getFilenameFromUrl(docLink.url);
+			const label = docLink.text || "Untitled Document";
+			return {
+				key: docLink.url,
+				url: docLink.url,
+				label,
+				sublabel: filename || null,
+				editHref: docLink.url,
+				onOpenClick: () => handleDocumentLinkClick(docLink.url),
+				editTitle: filename ? `Open document: ${filename}` : `Open document: ${label}`,
+				openTitle: filename ? `Open document: ${filename}` : `Open document: ${label}`,
+				showEditIcon: false,
+			};
+		});
+
+		return (
+			<ul className="w-full space-y-2">
+				{[...fileItems, ...linkItems].map((doc) => (
+					<li key={doc.key} className="flex items-center gap-2">
+						<a
+							href={doc.editHref}
+							target={doc.editHref === "#" ? undefined : "_blank"}
+							rel={doc.editHref === "#" ? undefined : "noopener noreferrer"}
+							onClick={doc.onEditClick ?? doc.onOpenClick}
+							className="text-sm text-left min-w-0 shrink inline-flex flex-row items-center gap-2 cursor-pointer bg-transparent border-none p-0"
+							title={doc.editTitle}
+						>
+							{doc.showEditIcon && <EditIcon className="h-4 w-4 shrink-0" aria-hidden="true" />}
+							<span className="flex flex-col items-start break-all">
+								<span>{doc.label}</span>
+								{doc.sublabel && (
+									<span className="text-xs text-gray-500 break-all">{doc.sublabel}</span>
+								)}
+							</span>
+						</a>
+						<a
+							href={doc.url}
+							target="_blank"
+							rel="noopener noreferrer"
+							onClick={doc.onOpenClick}
+							className="ml-1 inline-block bg-sfgov-blue rounded-sm text-white opacity-70 hover:opacity-100 shrink-0 mt-0.5"
+							title={doc.openTitle}
+						>
+							<OpenIcon className="w-4 h-4" aria-hidden="true" />
+						</a>
+					</li>
+				))}
+			</ul>
+		);
+	};
+
 	if (!hasImages && !hasFiles && documentLinks.length === 0) {
 		if (isLoadingLinks) {
 			return (
@@ -163,74 +248,9 @@ export const MediaAssetsCard: React.FC<MediaAssetsCardProps> = ({
 					<h3 className="text-sm font-semibold text-gray-700 mb-2">
 						Documents ({isLoadingLinks ? `${files.length}+` : files.length + documentLinks.length})
 					</h3>
-					{hasFiles || documentLinks.length > 0 ? (
-						<ul className="w-full space-y-2">
-							{/* Documents from files metadata first */}
-							{files.map((file) => {
-								const filename = getFilenameFromUrl(file.url);
-								return (
-									<li key={`file-${file.id}`} className="flex items-center gap-2">
-										<a
-											href="#"
-											onClick={() => handleFileClick(file.id)}
-											className="text-sm text-left min-w-0 shrink inline-flex flex-row items-center gap-2 cursor-pointer bg-transparent border-none p-0"
-											title={filename ? `Edit document: ${filename}` : `Edit document: ${file.title || "Untitled File"}`}
-										>
-											<EditIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
-											<span className="flex flex-col items-start">
-												<span>{file.title || file.filename || "Untitled File"}</span>
-												{file.filename && file.title
-													&& file.title !== file.filename
-													&& (<span className="text-xs text-gray-500">{file.filename}</span>)}
-											</span>
-										</a>
-										<a
-											href={file.url}
-											target="_blank"
-											rel="noopener noreferrer"
-											className="ml-1 inline-block bg-sfgov-blue rounded-sm text-white opacity-70 hover:opacity-100 shrink-0 mt-0.5"
-											title={filename ? `Open document: ${filename}` : `Open document: ${file.title || "Untitled File"}`}
-										>
-											<OpenIcon className="w-4 h-4" aria-hidden="true" />
-										</a>
-									</li>
-								);
-							})}
-
-							{/* Document links from page content second */}
-							{documentLinks.map((docLink) => {
-								const filename = getFilenameFromUrl(docLink.url);
-								return (
-									<li key={docLink.url} className="flex items-center gap-2">
-										<a
-											href={docLink.url}
-											target="_blank"
-											rel="noopener noreferrer"
-											onClick={() => handleDocumentLinkClick(docLink.url)}
-											className="text-sm text-left min-w-0 shrink inline-flex flex-row items-center gap-2 cursor-pointer bg-transparent border-none p-0"
-											title={filename ? `Open document: ${filename}` : `Open document: ${docLink.text || "Untitled Document"}`}
-										>
-											<span className="flex flex-col items-start">
-												<span>{docLink.text || "Untitled Document"}</span>
-												{filename && (<span className="text-xs text-gray-500">{filename}</span>)}
-											</span>
-										</a>
-										<a
-											href={docLink.url}
-											target="_blank"
-											rel="noopener noreferrer"
-											className="ml-1 inline-block bg-sfgov-blue rounded-sm text-white opacity-70 hover:opacity-100 shrink-0 mt-0.5"
-											title={filename ? `Open document: ${filename}` : `Open document: ${docLink.text || "Untitled Document"}`}
-										>
-											<OpenIcon className="w-4 h-4" aria-hidden="true" />
-										</a>
-									</li>
-								);
-							})}
-						</ul>
-					) : (
-						<p className="text-sm text-gray-500 italic">No documents</p>
-					)}
+					{hasFiles || documentLinks.length > 0
+						? renderDocumentList()
+						: <p className="text-sm text-gray-500 italic">No documents</p>}
 				</div>
 			</div>
 		</Card>

@@ -209,34 +209,50 @@ export function checkVideoAccessibility(): VideoAccessibilityResults {
 	};
 
 	// check if a transcript toggle exists within the same semantic section as the video.
-	// search is bounded by the nearest section/article/figure ancestor to avoid matching
-	// transcript elements that belong to a different video further up the page.
+	// walks up the DOM from the video element, searching each ancestor's subtree for a
+	// transcript link or button.  stops early at natural semantic boundaries (section,
+	// article, figure, main) to avoid matching transcript elements from a different video
+	// block further up the page.  max depth of 6 handles deeply-nested iframes (e.g.
+	// SF.gov's YouTube embeds) where the transcript link is a sibling several levels up.
 	const findTranscriptToggle = (videoEl: Element): boolean => {
-		const boundary = videoEl.closest("section, article, figure") || videoEl.parentElement;
-		if (!boundary) {
-			return false;
-		}
-
-		const clickables = Array.from(boundary.querySelectorAll(
-			"a, button, [role='button'], [class*='transcript'], [id*='transcript']"
-		));
-
-		for (const el of clickables) {
+		const isTranscriptElement = (el: Element): boolean => {
 			const text = (el.textContent || "").trim().toLowerCase();
 			const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
 			const title = (el.getAttribute("title") || "").toLowerCase();
 			const className = (el.getAttribute("class") || "").toLowerCase();
 			const id = (el.getAttribute("id") || "").toLowerCase();
 
-			if (
+			return (
 				text.includes("transcript") ||
 				ariaLabel.includes("transcript") ||
 				title.includes("transcript") ||
 				className.includes("transcript") ||
 				id.includes("transcript")
-			) {
+			);
+		};
+
+		let el: Element | null = videoEl.parentElement;
+		let depth = 0;
+		const maxDepth = 6;
+
+		while (el && depth < maxDepth) {
+			const clickables = Array.from(el.querySelectorAll(
+				"a, button, [role='button'], [class*='transcript'], [id*='transcript']"
+			));
+
+			if (clickables.some(isTranscriptElement)) {
 				return true;
 			}
+
+			// stop at natural semantic boundaries to avoid matching a transcript
+			// that belongs to a different video block higher on the page
+			const tag = el.tagName.toLowerCase();
+			if (tag === "section" || tag === "article" || tag === "figure" || tag === "main") {
+				break;
+			}
+
+			el = el.parentElement;
+			depth++;
 		}
 
 		return false;
